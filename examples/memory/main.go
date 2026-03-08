@@ -27,7 +27,8 @@ func main() {
 
 	// 1. Setup the actual Transport (the "wire")
 	// In Go, this starts the npx process as a child
-	cmd := exec.Command("go", "run", "../../cmd/fetch/main.go") // ("npx", "-y", "@modelcontextprotocol/server-fetch")
+	cmd := exec.Command("go", "run", "../../cmd/memory/main.go") // ("npx", "-y", "@modelcontextprotocol/server-fetch")
+	cmd.Env = append(os.Environ(), "MEMORY_FILE_PATH=memory.jsonl")
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()

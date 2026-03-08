@@ -115,3 +115,34 @@ This document tracks feature parity between the Go implementations and their res
 - [x] Server registers with runtime without panic
 - [x] Tool schema includes all required fields
 - [x] Error handling uses proper MCP patterns (IsError flag)
+
+---
+
+## 🧠 Memory Server
+
+### ✅ Implemented Features
+
+#### Core Functionality
+- **Graph Storage** - File-based storage (`memory.jsonl`) with entities, relations, and observations.
+- **Migration** - Automatic fallback and migration from legacy `memory.json` formats to JSONL.
+- **Tools Exposed** - `create_entities`, `create_relations`, `add_observations`, `delete_entities`, `delete_observations`, `delete_relations`, `read_graph`, `search_nodes`, `open_nodes`.
+
+#### Configuration Options
+- `MEMORY_FILE_PATH` - Override default storage location via environment variable.
+
+### 🔄 Known Differences
+
+#### Implementation Language
+- **TypeScript**: Written in TypeScript using `fs.promises`. Uses Zod for schema validation.
+- **Go**: Written in Go using standard `os` and `encoding/json` handling. Manual structural validation is enforced by strict Go structs and typed arguments.
+
+#### Search
+- **TypeScript**: Case-insensitive substring matching.
+- **Go**: Case-insensitive substring matching using `strings.Contains`. Identical logic but implemented natively.
+
+### ⚠️ Limitations
+
+- Uses straightforward sequential file reads for JSONL which is identical to the TypeScript reference implementation, but might encounter identical scaling limits if the JSONL file grows exceptionally large.
+
+## 📋 Testing Status
+- Unit tests (`manager_test.go`, `server_test.go`) written via `testify/suite` exceeding 90% logic coverage for Graph Manager operations.

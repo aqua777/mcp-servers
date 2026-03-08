@@ -1,15 +1,12 @@
-module github.com/aqua777/mcp-servers/examples/fetch
+module github.com/aqua777/mcp-servers/examples/memory
 
-go 1.24.0
+go 1.25.8
 
 replace github.com/aqua777/mcp-servers/examples/utils => ../utils
 
 require (
 	github.com/aqua777/mcp-servers v0.0.0-00010101000000-000000000000
 	github.com/aqua777/mcp-servers/examples/utils v0.0.0
-)
-
-require (
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/sashabaranov/go-openai v1.41.2
 )

@@ -2,8 +2,11 @@ go 1.25.8
 
 use (
 	./
+	./cmd/memory
 	./examples/fetch
+	./examples/memory
 	./examples/filesystem
+	./examples/utils
 // ./cmd/everything
 // ./cmd/filesystem
 // ./cmd/git

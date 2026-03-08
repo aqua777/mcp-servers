@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aqua777/krait"
+	"github.com/aqua777/mcp-servers/examples/utils"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sashabaranov/go-openai"
 )
@@ -18,11 +19,6 @@ import (
 const (
 	llmModel = "qwen3:0.6b"
 )
-
-func jsonStr(v interface{}) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
-}
 
 func runFileSystemMCPServer(args []string) error {
 	allowedDirs := krait.GetStringSlice("app.allowed-directories")
@@ -91,7 +87,7 @@ func runFileSystemMCPServer(args []string) error {
 	if err != nil {
 		return fmt.Errorf("ListTools Error: %v", err)
 	}
-	fmt.Printf("Discovered tools: %s\n", jsonStr(toolsResult.Tools))
+	fmt.Printf("Discovered tools: %s\n", utils.JsonStr(toolsResult.Tools))
 
 	// 5. Convert MCP Tools to OpenAI/Ollama Tools
 	var ollamaTools []openai.Tool
@@ -126,7 +122,7 @@ func runFileSystemMCPServer(args []string) error {
 	}
 
 	msg := resp.Choices[0].Message
-	fmt.Printf("LLM Response: %s\n", jsonStr(msg))
+	fmt.Printf("LLM Response: %s\n", utils.JsonStr(msg))
 
 	// 8. Handle Tool Calls
 	if len(msg.ToolCalls) > 0 {
