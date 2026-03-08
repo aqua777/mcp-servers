@@ -1,0 +1,14 @@
+go 1.25.8
+
+use (
+	./
+	./examples/fetch
+	./examples/filesystem
+// ./cmd/everything
+// ./cmd/filesystem
+// ./cmd/git
+// ./cmd/memory
+// ./cmd/sequentialthinking
+// ./cmd/time
+// ./cmd/fetch
+)
