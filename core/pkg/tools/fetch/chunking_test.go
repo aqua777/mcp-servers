@@ -86,3 +86,17 @@ func TestApplyChunkingBoundaries(t *testing.T) {
 		t.Errorf("Expected no error message when fetching last chunk, got: %s", result)
 	}
 }
+
+func TestApplyChunking_Empty(t *testing.T) {
+	got := applyChunking("abc", 0, 0)
+	if got != "<error>No more content available.</error>" {
+		t.Errorf("Expected error for empty content, got: %s", got)
+	}
+}
+
+func TestApplyChunking_MaxLengthGreaterThanLength(t *testing.T) {
+	got := applyChunking("abc", 0, 10)
+	if got != "abc" {
+		t.Errorf("Expected abc, got: %s", got)
+	}
+}

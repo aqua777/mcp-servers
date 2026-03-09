@@ -32,15 +32,9 @@ func checkMayAutonomouslyFetchURL(ctx context.Context, urlStr, userAgent, proxyU
 		return fmt.Errorf("failed to construct robots.txt URL: %w", err)
 	}
 
-	client := &http.Client{}
-	if proxyURL != "" {
-		proxyURLParsed, err := url.Parse(proxyURL)
-		if err != nil {
-			return fmt.Errorf("invalid proxy URL: %w", err)
-		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURLParsed),
-		}
+	client, err := getHTTPClient(proxyURL)
+	if err != nil {
+		return err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", robotsURL, nil)

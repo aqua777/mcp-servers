@@ -146,3 +146,30 @@ This document tracks feature parity between the Go implementations and their res
 
 ## 📋 Testing Status
 - Unit tests (`manager_test.go`, `server_test.go`) written via `testify/suite` exceeding 90% logic coverage for Graph Manager operations.
+
+---
+
+## 🧠 Sequential Thinking Server
+
+### ✅ Implemented Features
+
+#### Core Functionality
+- **State Management** - In-memory history tracking and branch management for thoughts
+- **Tool Exposure** - `sequentialthinking` tool registered with proper input schema validation matching TypeScript reference
+
+#### Configuration Options
+- `DISABLE_THOUGHT_LOGGING` - Environment variable to disable console output of thoughts
+
+### 🔄 Known Differences
+
+#### Implementation Language
+- **TypeScript**: Written in TypeScript using standard string literal templates.
+- **Go**: Written in Go using strings.Builder and formatted structs. Behavior matches identically.
+
+### ⚠️ Limitations
+
+- Operates purely in-memory. Terminating the MCP server process resets the thought history, matching the reference implementation.
+
+## 📋 Testing Status
+- Unit tests (`server_test.go`) written via `testify/suite`.
+

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/aqua777/mcp-servers/core/pkg/tools/filesystem"
 )
@@ -33,7 +34,7 @@ func main() {
 
 	ctx := context.Background()
 
-	if err := runtime.Run(ctx, "filesystem", opts); err != nil {
+	if err := runtime.Run(ctx, common.MCP_FileSystem, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running filesystem server: %v\n", err)
 		os.Exit(1)
 	}

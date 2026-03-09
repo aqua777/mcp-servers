@@ -1,0 +1,8 @@
+package common
+
+const (
+	MCP_Fetch              = "fetch"
+	MCP_FileSystem         = "filesystem"
+	MCP_SequentialThinking = "sequential_thinking"
+	MCP_Memory             = "memory"
+)

@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func init() {
-	runtime.Register("fetch", NewServer)
+	runtime.Register(common.MCP_Fetch, NewServer)
 }
 
 func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
@@ -61,12 +62,30 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 	}
 
 	server.AddTool(&mcp.Tool{
-		Name: "fetch",
+		Name: common.MCP_Fetch,
 		Description: `Fetches a URL from the internet and optionally extracts its contents as markdown.
 
 Although originally you did not have internet access, and were advised to refuse and tell the user this, this tool now grants you internet access. Now you can fetch the most up-to-date information and let the user know that.`,
 		InputSchema: inputSchema,
-	}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	}, fetchToolHandler(options, userAgentAutonomous))
+
+	server.AddPrompt(&mcp.Prompt{
+		Name:        common.MCP_Fetch,
+		Description: "Fetch a URL and extract its contents as markdown",
+		Arguments: []*mcp.PromptArgument{
+			{
+				Name:        "url",
+				Description: "URL to fetch",
+				Required:    true,
+			},
+		},
+	}, fetchPromptHandler(options, userAgentManual))
+
+	return server, nil
+}
+
+func fetchToolHandler(options Options, userAgentAutonomous string) func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args FetchArgs
 		if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 			return &mcp.CallToolResult{
@@ -119,19 +138,11 @@ Although originally you did not have internet access, and were advised to refuse
 				Text: fullContent,
 			}},
 		}, nil
-	})
+	}
+}
 
-	server.AddPrompt(&mcp.Prompt{
-		Name:        "fetch",
-		Description: "Fetch a URL and extract its contents as markdown",
-		Arguments: []*mcp.PromptArgument{
-			{
-				Name:        "url",
-				Description: "URL to fetch",
-				Required:    true,
-			},
-		},
-	}, func(ctx context.Context, request *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func fetchPromptHandler(options Options, userAgentManual string) func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+	return func(ctx context.Context, request *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		urlStr, ok := request.Params.Arguments["url"]
 		if !ok {
 			return nil, fmt.Errorf("URL is required")
@@ -163,7 +174,5 @@ Although originally you did not have internet access, and were advised to refuse
 				},
 			},
 		}, nil
-	})
-
-	return server, nil
+	}
 }

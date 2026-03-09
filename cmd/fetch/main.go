@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/aqua777/mcp-servers/core/pkg/tools/fetch"
 )
@@ -37,7 +38,7 @@ func main() {
 		ProxyURL:        *proxyURL,
 	}
 
-	if err := runtime.Run(ctx, "fetch", opts); err != nil {
+	if err := runtime.Run(ctx, common.MCP_Fetch, opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -15,7 +16,7 @@ type Options struct {
 }
 
 func init() {
-	runtime.Register("memory", NewServer)
+	runtime.Register(common.MCP_Memory, NewServer)
 }
 
 func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
@@ -373,7 +374,7 @@ func handleSuccess(data interface{}) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				
+
 				Text: string(b),
 			},
 		},
@@ -384,7 +385,7 @@ func handleSuccessMsg(msg string) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				
+
 				Text: msg,
 			},
 		},
@@ -395,7 +396,7 @@ func handleError(err error) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				
+
 				Text: fmt.Sprintf("Error: %v", err),
 			},
 		},

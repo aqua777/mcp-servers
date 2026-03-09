@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/aqua777/krait"
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/aqua777/mcp-servers/core/pkg/tools/memory"
 )
@@ -20,7 +21,7 @@ func runMemoryServer(args []string) error {
 
 	ctx := context.Background()
 
-	if err := runtime.Run(ctx, "memory", opts); err != nil {
+	if err := runtime.Run(ctx, common.MCP_Memory, opts); err != nil {
 		return fmt.Errorf("error running memory server: %w", err)
 	}
 

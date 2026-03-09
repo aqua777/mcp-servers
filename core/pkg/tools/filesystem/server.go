@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func init() {
-	runtime.Register("filesystem", NewServer)
+	runtime.Register(common.MCP_FileSystem, NewServer)
 }
 
 type Options struct {

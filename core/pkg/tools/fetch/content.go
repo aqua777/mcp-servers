@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
 
-	"github.com/JohannesKaufmann/html-to-markdown"
+	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/go-shiori/go-readability"
 )
 
@@ -29,18 +27,9 @@ func extractContentFromHTML(htmlContent string) (string, error) {
 }
 
 func fetchURL(ctx context.Context, urlStr, userAgent string, forceRaw bool, proxyURL string) (content, prefix string, err error) {
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-	}
-
-	if proxyURL != "" {
-		proxyURLParsed, err := url.Parse(proxyURL)
-		if err != nil {
-			return "", "", fmt.Errorf("invalid proxy URL: %w", err)
-		}
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(proxyURLParsed),
-		}
+	client, err := getHTTPClient(proxyURL)
+	if err != nil {
+		return "", "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)

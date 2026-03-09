@@ -2,10 +2,12 @@ go 1.25.8
 
 use (
 	./
-	./cmd/memory
+	// ./cmd/memory
+	// ./cmd/sequentialthinking
 	./examples/fetch
-	./examples/memory
 	./examples/filesystem
+	./examples/memory
+	./examples/sequentialthinking
 	./examples/utils
 // ./cmd/everything
 // ./cmd/filesystem
