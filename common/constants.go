@@ -5,4 +5,5 @@ const (
 	MCP_FileSystem         = "filesystem"
 	MCP_SequentialThinking = "sequential_thinking"
 	MCP_Memory             = "memory"
+	MCP_Time               = "time"
 )

@@ -23,17 +23,17 @@
 - **Fetch** – See [`cmd/fetch/README.md`](./cmd/fetch/README.md) for CLI + runtime wiring details and [`examples/fetch`](./examples/fetch) for embedding usage.
 - **Filesystem** – See [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/filesystem`](./examples/filesystem) for the demo runner.
 - **Memory** – See [`cmd/memory/README.md`](./cmd/memory/README.md) plus [`examples/memory`](./examples/memory) for SDK usage.
+- **Sequential Thinking** – See [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) for tooling details and [`examples/sequentialthinking`](./examples/sequentialthinking) for embedding usage. Parity notes live in [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server).
+- **Time** – See [`cmd/time/README.md`](./cmd/time/README.md) for CLI details and [`examples/time`](./examples/time) for SDK usage. Parity notes live in [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server).
 
 ### 🚧 In Progress / Planned
 - **Everything** – MCP runtime placeholder
 - **Git** – Placeholder package
-- **Sequential Thinking** – Placeholder package
-- **Time** – Placeholder package
 
 ## Current Status (high-level)
 - ✅ Workspace + module scaffolding in place
 - ✅ Runtime glue + server registry system implemented
-- ✅ Fetch, Filesystem, and Memory servers implemented with docs + examples
+- ✅ Fetch, Filesystem, Memory, and Sequential Thinking servers implemented with docs + examples
 - 🚧 Remaining servers are placeholders awaiting implementation
 
 ## Getting Started
@@ -68,6 +68,15 @@ go build -o memory ./cmd/memory
 ./memory --memory-file-path /tmp/mcp-memory.jsonl
 ```
 
+### Building the Sequential Thinking Server
+```bash
+# From the golang directory
+go build -o sequentialthinking ./cmd/sequentialthinking
+
+# Run with thought logging disabled
+DISABLE_THOUGHT_LOGGING=true ./sequentialthinking
+```
+
 ### Testing
 ```bash
 # Run all fetch server tests
@@ -78,6 +87,9 @@ go test -p=1 ./core/pkg/tools/filesystem -v
 
 # Run memory tests (suite-based)
 go test ./core/pkg/tools/memory -v
+
+# Run sequential thinking tests
+go test ./core/pkg/tools/sequentialthinking -v
 ```
 
 ### Using with MCP Inspector
@@ -96,10 +108,10 @@ npx @modelcontextprotocol/inspector ./fetch
 | Fetch | ✅ Implemented | [`cmd/fetch/README.md`](./cmd/fetch/README.md) · [`docs/parity.md#🌐-fetch-server`](./docs/parity.md#🌐-fetch-server) |
 | Filesystem | ✅ Implemented | [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) |
 | Memory | ✅ Implemented | [`cmd/memory/README.md`](./cmd/memory/README.md) · [`docs/parity.md#🧠-memory-server`](./docs/parity.md#🧠-memory-server) |
+| Sequential Thinking | ✅ Implemented | [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) · [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server) |
+| Time | ✅ Implemented | [`cmd/time/README.md`](./cmd/time/README.md) · [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server) |
 | Everything | 🚧 Placeholder | _TBD_ |
 | Git | 🚧 Placeholder | _TBD_ |
-| Sequential Thinking | 🚧 Placeholder | _TBD_ |
-| Time | � Placeholder | _TBD_ |
 
 ## Contributing
 - Review `docs/parity.md` for the outstanding parity tasks per server.

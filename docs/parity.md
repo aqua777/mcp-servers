@@ -173,3 +173,26 @@ This document tracks feature parity between the Go implementations and their res
 ## 📋 Testing Status
 - Unit tests (`server_test.go`) written via `testify/suite`.
 
+---
+
+## ⏰ Time Server
+
+### ✅ Implemented Features
+
+#### Core Functionality
+- **Time Retrieval** - Get current time with timezone, day of week, and DST status.
+- **Timezone Conversion** - Convert a specific time (HH:MM) from a source timezone to a target timezone.
+- **Tools Exposed** - `get_current_time`, `convert_time` registered with proper input schema validation matching TypeScript/Python reference.
+
+### 🔄 Known Differences
+
+#### Implementation Language
+- **Python**: Uses `zoneinfo`, `tzlocal`, and standard `datetime`.
+- **Go**: Uses standard `time` package with IANA timezone loading. It handles fractional hour offsets smoothly, consistent with Python reference.
+
+### ⚠️ Limitations
+
+- The Python reference defaults to the host machine's local timezone if none is provided via `tzlocal`. The Go version currently relies on the standard `time.Local`, though both require explicit timezone string inputs as per the MCP tool schema.
+
+## 📋 Testing Status
+- Unit tests (`server_test.go`) written via `testify/suite` achieving high coverage for timezone parsing, formatting, and mathematical offset conversions.

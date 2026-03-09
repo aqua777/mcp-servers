@@ -2,12 +2,14 @@ go 1.25.8
 
 use (
 	./
+	./cmd/time
 	// ./cmd/memory
 	// ./cmd/sequentialthinking
 	./examples/fetch
 	./examples/filesystem
 	./examples/memory
 	./examples/sequentialthinking
+	./examples/time
 	./examples/utils
 // ./cmd/everything
 // ./cmd/filesystem
