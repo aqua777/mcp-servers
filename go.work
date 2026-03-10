@@ -2,7 +2,9 @@ go 1.25.8
 
 use (
 	./
-	./cmd/time
+	./examples/everything
+	// ./cmd/time
+	// ./cmd/everything
 	// ./cmd/memory
 	// ./cmd/sequentialthinking
 	./examples/fetch
