@@ -196,3 +196,27 @@ This document tracks feature parity between the Go implementations and their res
 
 ## 📋 Testing Status
 - Unit tests (`server_test.go`) written via `testify/suite` achieving high coverage for timezone parsing, formatting, and mathematical offset conversions.
+
+---
+
+## 🌐 Everything Server
+
+### ✅ Implemented Features
+
+#### Core Functionality
+- **Transports** - Standard stdio transport, plus SSE and Streamable HTTP support on port `3001` (using a server-per-session model).
+- **Tools** - Implemented basic demo tools: `echo`, `get-env`, `get-sum`, `get-tiny-image`, `get-annotated-message`, `get-structured-content`.
+- **Advanced Tools** - Implemented `get-roots-list`, `trigger-elicitation-request`, `trigger-sampling-request`, and `gzip-file-as-resource`.
+- **Prompts** - `simple-prompt` and `args-prompt` available.
+- **Resources** - Simulated resource template logic for text/blob URIs (`demo://resource/dynamic/text/{id}`).
+- **Notifications** - `logging` background emitter testing `Level` propagation, plus `subscriptions` update emitter logic for resources.
+
+### ⚠️ Known Differences & Limitations
+
+#### Tools & Features
+- **TypeScript**: Has 18 tools, including comprehensive tasks/research scenarios, async bi-directional elicitation requests, and complex completable prompts with state dependencies.
+- **Go**: Implements a representative subset of tools. The advanced SEP-1686 task demos (e.g. `simulate-research-query` or bidirectional `trigger-sampling-request-async`) are currently omitted because the Go SDK does not yet support the experimental Tasks API (`experimental.tasks`) or the `TaskStore` required for these features.
+- **Session Mapping**: Go SDK handles multiple sessions differently than the TS wrapper. For SSE and Streamable HTTP transports, we now use a server-per-session model similar to TS to properly track sessions.
+
+## 📋 Testing Status
+- Basic tools and server setup are tested via `go test`. Coverage includes error handling serialization formatting logic. Advanced tools like gzip, elicitation, and sampling have basic registration and null-session bounds checking.

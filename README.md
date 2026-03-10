@@ -110,7 +110,7 @@ npx @modelcontextprotocol/inspector ./fetch
 | Memory | ✅ Implemented | [`cmd/memory/README.md`](./cmd/memory/README.md) · [`docs/parity.md#🧠-memory-server`](./docs/parity.md#🧠-memory-server) |
 | Sequential Thinking | ✅ Implemented | [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) · [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server) |
 | Time | ✅ Implemented | [`cmd/time/README.md`](./cmd/time/README.md) · [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server) |
-| Everything | 🚧 Placeholder | _TBD_ |
+| Everything | ✅ Implemented | [`cmd/everything/README.md`](./cmd/everything/README.md) · [`docs/parity.md#🌐-everything-server`](./docs/parity.md#🌐-everything-server) |
 | Git | 🚧 Placeholder | _TBD_ |
 
 ## Contributing
