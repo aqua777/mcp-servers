@@ -1,0 +1,32 @@
+#!/bin/bash
+
+CMDLINE_ARGS=()
+
+until [ -z "$1" ]; do
+    case $1 in
+        -ldflags)
+            shift
+            GOLDFLAGS="$1"
+            shift
+            ;;
+
+        -ldflags=)
+            GOLDFLAGS=$(echo $1 | sed 's/-ldflags=//')
+            shift
+            ;;
+
+        *)
+            CMDLINE_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+GO_BUILD_ARGS=()
+if [ -n "$GOLDFLAGS" ]; then
+    GO_BUILD_ARGS+=("-ldflags" "${GOLDFLAGS[@]}")
+fi
+GO_BUILD_ARGS+=("${CMDLINE_ARGS[@]}")
+
+echo "go build: ${GO_BUILD_ARGS[@]}" 1>&2
+go build "${GO_BUILD_ARGS[@]}"

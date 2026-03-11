@@ -1,0 +1,49 @@
+#!/bin/bash
+
+TLS_DIR=/etc/tls
+HOST_NAME=localhost
+
+. /usr/local/bin/go-common
+
+function usage() {
+    echo "Usage: $0"
+    echo "  [-help | --help]                  - show information how to use this utility"
+    echo "  [-d | -dir | --dir] <DIR_NAME>    - output location for certificate and private key files (default: ${TLS_DIR})"
+    echo "  [-h | -host | --host] <HOST_NAME> - hostname on certificate (default: ${HOST_NAME})"
+    exit 0
+}
+
+function install-certificate() {
+    local tls_dir=$1
+    local host_name=$2
+
+    mkdir -p ${tls_dir}
+    openssl req -x509 -newkey rsa:4096 -keyout ${tls_dir}/key.pem -out ${tls_dir}/cert.pem -sha256 -days 3650 -nodes -subj "/CN=${host_name}"
+    chmod a+r ${tls_dir}/*
+}
+
+until [ -z "$1" ]; do
+    case $1 in
+        -help|--help)
+            usage
+            ;;
+
+        -d|-dir|--dir)
+            shift
+            TSL_DIR=$1
+            shift
+            ;;
+
+        -h|-host|--host)
+            shift
+            HOST_NAME=$1
+            shift
+            ;;
+
+        *)
+            shift
+            ;;
+    esac
+done
+
+sudo-exec-func install-certificate "${TLS_DIR}" "${HOST_NAME}"

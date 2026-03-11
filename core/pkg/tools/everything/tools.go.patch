@@ -1,0 +1,22 @@
+--- tools.go
++++ tools.go
+@@ -70,18 +70,19 @@
+ 
+ func handleGetEnv(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+ 	envVars := make(map[string]string)
+ 	for _, env := range os.Environ() {
+ 		for i := 0; i < len(env); i++ {
+ 			if env[i] == '=' {
+ 				envVars[env[:i]] = env[i+1:]
+ 				break
+ 			}
+ 		}
+ 	}
+ 
+ 	b, err := json.MarshalIndent(envVars, "", "  ")
+- if err != nil {
+- return handleError(err)
+- }
+ 
+ 	return handleSuccess(string(b))
+ }
