@@ -1,0 +1,42 @@
+#!/bin/bash
+
+function usage() {
+    echo "Usage: $0"
+    echo "  [-help | --help]           - show information how to use this utility"
+    echo "  [-fix-cache | --fix-cache] - fix cache permissions"
+    echo "  [-debug | --debug]         - show more verbose output"
+    exit 0
+}
+
+ARGS=()
+until [ -z "$1" ]; do
+    case $1 in
+        -fix-cache|--fix-cache)
+            FIX_CACHE=true
+            shift
+            ;;
+
+        -debug|--debug)
+            DEBUG=true
+            shift
+            ;;
+
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+echo -n "Downloading Go modules ... "
+COMMAND="mod download ${ARGS[@]}"
+if [ "${DEBUG}" == "true" ]; then
+    echo -n "(Executing: go ${COMMAND}) ... "
+fi
+go ${COMMAND}
+
+if [ "${FIX_CACHE}" == "true" ]; then
+    echo -n "Fixing cache permissions ... "
+    go-fix-cache
+fi
+echo "Done"

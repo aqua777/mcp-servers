@@ -1,0 +1,26 @@
+#!/bin/bash
+
+WHOAMI=$(whoami)
+GIT_GLOBAL_CONFIG=${HOME}/.gitconfig
+GIT_GLOBAL_CMD="git config --global"
+
+if ! ${GIT_GLOBAL_CMD} --get safe.directory; then
+    ${GIT_GLOBAL_CMD} --add safe.directory $(pwd)
+fi
+
+IS_GIT_REPO=$(git rev-parse --is-inside-work-tree)
+echo "Is git repo? $(git rev-parse --is-inside-work-tree)"
+if [ "${IS_GIT_REPO}" != "true" ]; then
+    echo "ERROR: not in a git repo. Exiting."
+    exit 3
+fi
+
+if [ -n "${GITLAB_USER_NAME}" ]; then
+    ${GIT_GLOBAL_CMD} user.name "${GITLAB_USER_NAME}"
+fi
+
+if [ -n "${GITLAB_USER_EMAIL}" ]; then
+    ${GIT_GLOBAL_CMD} user.email "${GITLAB_USER_EMAIL}"
+fi
+
+exec goreleaser release $@

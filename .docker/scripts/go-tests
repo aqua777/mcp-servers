@@ -1,0 +1,72 @@
+#!/bin/bash
+
+if [ -z "${WORKDIR}" ]; then
+    WORKDIR=$(pwd)
+fi
+
+EXIT_CODE=0
+DO_COVERAGE=0
+GO_TEST_ARGS=()
+COVERAGE_OUT=$(mktemp /tmp/coverage.XXXXXX)
+
+until [ -z "$1" ]; do
+    case $1 in
+        -no-cache)
+            GO_TEST_ARGS+=("-count=1")
+            shift
+            ;;
+
+        -cover)
+            shift
+            DO_COVERAGE=1
+
+            COVERAGE=".coverage"
+            COVERAGE_DIR=${WORKDIR}/${COVERAGE}
+            COVERAGE_TEMP=${COVERAGE_DIR}/profile.tmp
+            COVERAGE_PROFILE=${COVERAGE_DIR}/profile.out
+            COVERAGE_OUT=${COVERAGE_DIR}/tests.out
+            COVERAGE_COBERTURA=${COVERAGE_DIR}/cobertura.xml
+
+            mkdir -p ${COVERAGE_DIR}
+            rm -f ${COVERAGE_DIR}/* > /dev/null || true
+
+            GO_TEST_ARGS+=("-covermode=count")
+            GO_TEST_ARGS+=("-coverprofile=${COVERAGE_TEMP}")
+            ;;
+
+        *)
+            GO_TEST_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+echo "--- BEGINNING OF UNIT TESTS ---"
+echo "go test: ${GO_TEST_ARGS[@]}"
+
+set -o pipefail
+go test ${GO_TEST_ARGS[@]} 2>&1 | tee ${COVERAGE_OUT}
+EXIT_CODE=$?
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "go test: OK"
+else
+    echo "go test: FAILED"
+    echo "--- FAILED TESTS ---"
+    cat ${COVERAGE_OUT} | grep -e '\-\-\- FAIL:' -e 'build failed'
+    echo "--------------------"
+fi
+set +o pipefail
+
+if [ $EXIT_CODE -eq 0 ] && [ $DO_COVERAGE -eq 1 ]; then
+    cat ${COVERAGE_TEMP} | egrep -v "(mocks|test|\\.pb\\.go)" > ${COVERAGE_PROFILE}
+    go tool cover -html=${COVERAGE_PROFILE} -o ${COVERAGE_DIR}/go-tool-cover.html
+    gocov convert ${COVERAGE_PROFILE} | gocov-html | sed "s/#eee/lightgreen/g" > ${COVERAGE_DIR}/gocov.html
+    cat ${COVERAGE_OUT} | go-junit-report > ${COVERAGE_DIR}/junit.xml
+    gocover-cobertura < ${COVERAGE_PROFILE} > ${COVERAGE_COBERTURA}
+    echo Total coverage $(cat ${COVERAGE_DIR}/gocov.html | grep 'id="totalcov"' | awk -F '>' '{print $2}' | awk -F '<' '{print $1}')
+else
+    echo "go test: coverage reports skipped"
+fi
+echo "--- END OF UNIT TESTS ---"
+
+exit $EXIT_CODE

@@ -1,0 +1,43 @@
+#!/bin/bash
+
+function usage() {
+    echo "Usage: $0"
+    echo "  [-help | --help]   - show information how to use this utility"
+    echo "  [-id | --id] <ID>  - set 'gouser' ID to <ID>"
+    exit 0
+}
+
+until [ -z "$1" ]; do
+    case $1 in
+        -help|--help)
+            usage
+            ;;
+
+        -id|--id)
+            shift
+            USER_ID=$1
+            shift
+            ;;
+
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ "$(whoami)" != "root" ]; then
+    echo "You need to be root!"
+    exit 1
+fi
+
+if ! echo -n "${USER_ID}" | grep -E '^[0-9]+$' &>/dev/null; then
+    echo "Invalid user ID: ${USER_ID};"
+    exit 1
+fi
+
+if id -u ${USER_ID} &>/dev/null; then
+    echo "User ID ${USER_ID} already used: $(id ${USER_ID})"
+    exit
+fi
+
+usermod -u ${USER_ID} ${GOUSER}

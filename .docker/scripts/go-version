@@ -1,0 +1,3 @@
+#!/bin/bash
+
+go version | sed -s 's/go version go//' | awk '{print $1}'
