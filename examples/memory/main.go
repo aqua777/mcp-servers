@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/aqua777/mcp-servers/examples/utils"
@@ -26,9 +27,13 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Setup the actual Transport (the "wire")
-	// In Go, this starts the npx process as a child
-	cmd := exec.Command("go", "run", "../../cmd/memory/main.go") // ("npx", "-y", "@modelcontextprotocol/server-fetch")
-	cmd.Env = append(os.Environ(), "MEMORY_FILE_PATH=memory.jsonl")
+	// Run the memory server with an explicit absolute file path in this directory
+	memoryPath, err := filepath.Abs(filepath.Join(".", "memory.jsonl"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	cmd := exec.Command("go", "run", "../../cmd/memory/main.go", "--memory-file-path", memoryPath)
+	cmd.Env = os.Environ()
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()
@@ -90,6 +95,7 @@ func main() {
 	llm := openai.NewClientWithConfig(config)
 
 	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: "Always use MCP tools to answer; search the memory graph first."},
 		{Role: openai.ChatMessageRoleUser, Content: userQuery},
 	}
 
