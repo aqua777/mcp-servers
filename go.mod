@@ -9,6 +9,7 @@ require (
 	github.com/aqua777/krait v0.0.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
+	github.com/mattn/go-runewidth v0.0.16
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/sergi/go-diff v1.4.0
 	github.com/stretchr/testify v1.11.1
