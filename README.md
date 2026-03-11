@@ -1,119 +1,105 @@
-# Experimental Go MCP Servers
+# Go MCP Servers (Experimental)
 
-> ⚠️ **Caution**: This repository contains AI-transposed, experimental ports of the reference MCP servers from `servers/src`. Every binary is under active construction—APIs may change, transports may be unstable, and parity with the upstream TypeScript/Python implementations is still being validated. Use at your own risk and do not deploy in production.
+> ⚠️ Experimental ports of the reference MCP servers. APIs and transports may change; verify behavior against `docs/parity.md` before relying on them.
 
 ## Goals
-- Provide Go-native equivalents of the Everything, Filesystem, Fetch, Git, Memory, Sequential Thinking, and Time reference servers.
-- Expose each server as both a standalone binary (`cmd/<server>`) and an importable Go package for embedding.
-- Track feature parity exhaustively so gaps are visible and testable.
-- Ship ergonomic example programs in `./examples/<server>` for every implemented server.
+- Provide Go-native equivalents of the reference servers (Everything, Filesystem, Fetch, Git, Memory, Sequential Thinking, Time).
+- Ship each server as a standalone binary (`cmd/<server>`) and an embeddable module with examples under `./examples/<server>`.
+- Track feature parity and gaps explicitly via `docs/parity.md`.
 
 ## Workspace Layout
 ```
-./go.work                # References all modules (core + per-server)
-./core                   # Shared runtime, config, logging, and registration helpers
-./cmd/<server>           # Individual binaries with their own go.mod
-./docs/parity.md         # Snapshot of upstream parity + TODOs
-./examples/<server>      # Demonstrations of how to embed the servers
+./go.work                # Multi-module workspace for core + examples
+./core                   # Shared runtime, config, logging, registration helpers
+./cmd/<server>           # Individual server binaries (go.mod per server)
+./examples/<server>      # Embedding demos for each implemented server
+./docs/parity.md         # Parity matrix and limitations
+./Makefile               # Docker dev image + unit test wrapper
 ```
 
 ## Implementation Status
 
-### ✅ Completed
-- **Fetch** – See [`cmd/fetch/README.md`](./cmd/fetch/README.md) for CLI + runtime wiring details and [`examples/fetch`](./examples/fetch) for embedding usage.
-- **Filesystem** – See [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/filesystem`](./examples/filesystem) for the demo runner.
-- **Memory** – See [`cmd/memory/README.md`](./cmd/memory/README.md) plus [`examples/memory`](./examples/memory) for SDK usage.
-- **Sequential Thinking** – See [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) for tooling details and [`examples/sequentialthinking`](./examples/sequentialthinking) for embedding usage. Parity notes live in [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server).
-- **Time** – See [`cmd/time/README.md`](./cmd/time/README.md) for CLI details and [`examples/time`](./examples/time) for SDK usage. Parity notes live in [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server).
+### ✅ Implemented
+- **Everything** – stdio, SSE, and Streamable HTTP transports; demo tools/resources/prompts. See [`cmd/everything/README.md`](./cmd/everything/README.md).
+- **Fetch** – HTTP client with robots.txt enforcement, readability → markdown pipeline, proxy support. See [`cmd/fetch/README.md`](./cmd/fetch/README.md) and [`examples/fetch`](./examples/fetch).
+- **Filesystem** – Read/write/edit/search tools with sandboxing. See [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/filesystem`](./examples/filesystem).
+- **Memory** – JSONL-backed graph store with create/read/search/delete tools. See [`cmd/memory/README.md`](./cmd/memory/README.md) and [`examples/memory`](./examples/memory).
+- **Sequential Thinking** – In-memory thought history tools. See [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) and [`examples/sequentialthinking`](./examples/sequentialthinking).
+- **Time** – Current time and timezone conversion tools. See [`cmd/time/README.md`](./cmd/time/README.md) and [`examples/time`](./examples/time).
 
-### 🚧 In Progress / Planned
-- **Everything** – MCP runtime placeholder
-- **Git** – Placeholder package
+### 🚧 Planned / Placeholder
+- **Git** – Stub only; implementation not started.
 
 ## Current Status (high-level)
-- ✅ Workspace + module scaffolding in place
-- ✅ Runtime glue + server registry system implemented
-- ✅ Fetch, Filesystem, Memory, and Sequential Thinking servers implemented with docs + examples
-- 🚧 Remaining servers are placeholders awaiting implementation
+- ✅ Workspace + shared runtime in `core`
+- ✅ Servers above implemented with docs + examples; parity tracked in `docs/parity.md`
+- 🚧 Git server not implemented
 
-## Getting Started
+## Quick Start
 
-### Building the Fetch Server
+### Requirements
+- Go 1.24+
+- Vendored modules included (`go work vendor`).
+
+### Build any server
 ```bash
-# From the golang directory
-go build -o fetch ./cmd/fetch
-
-# Run with default settings
-./fetch
-
-# Run with custom options
-./fetch --user-agent "MyBot/1.0" --ignore-robots-txt --proxy-url "http://proxy.example.com:8080"
+# From the golang directory; do not emit binaries into the repo
+go build -o /dev/null ./cmd/<server>
 ```
 
-### Building the Filesystem Server
+### Run examples
 ```bash
-# From the golang directory
-go build -o filesystem ./cmd/filesystem
-
-# Allow the server to manage two directories
-./filesystem ~/code/project ~/notes
+go run ./examples/<server>
 ```
 
-### Building the Memory Server
+### Run a specific server
 ```bash
-# From the golang directory
-go build -o memory ./cmd/memory
+go build -o /tmp/fetch ./cmd/fetch
+/tmp/fetch --ignore-robots-txt --proxy-url "http://proxy.example.com:8080"
 
-# Point at a custom JSONL store
-./memory --memory-file-path /tmp/mcp-memory.jsonl
-```
+go build -o /tmp/filesystem ./cmd/filesystem
+/tmp/filesystem ~/code/project ~/notes
 
-### Building the Sequential Thinking Server
-```bash
-# From the golang directory
-go build -o sequentialthinking ./cmd/sequentialthinking
+go build -o /tmp/memory ./cmd/memory
+/tmp/memory --memory-file-path /tmp/mcp-memory.jsonl
 
-# Run with thought logging disabled
-DISABLE_THOUGHT_LOGGING=true ./sequentialthinking
+DISABLE_THOUGHT_LOGGING=true go run ./cmd/sequentialthinking
+
+go build -o /tmp/time-server ./cmd/time
+/tmp/time-server
+
+go build -o /tmp/everything ./cmd/everything
+/tmp/everything sse   # or: stdio | streamableHttp
 ```
 
 ### Testing
 ```bash
-# Run all fetch server tests
-go test ./core/pkg/tools/fetch -v
+# Local tests (match project conventions)
+go test -p=1 -count=1 -cover ./...
 
-# Run filesystem tests (serialized due to file operations)
-go test -p=1 ./core/pkg/tools/filesystem -v
-
-# Run memory tests (suite-based)
-go test ./core/pkg/tools/memory -v
-
-# Run sequential thinking tests
-go test ./core/pkg/tools/sequentialthinking -v
+# Or via Docker helper
+make dev-image
+make unit-tests
 ```
 
-### Using with MCP Inspector
+### MCP Inspector
 ```bash
-# Install MCP inspector (if not already installed)
-npm install -g @modelcontextprotocol/inspector
-
-# Run the fetch server with inspector
-npx @modelcontextprotocol/inspector ./fetch
+npx @modelcontextprotocol/inspector ./<built-binary>
 ```
 
 ## Server Highlights & Docs
 
 | Server | Status | Primary Docs |
 | --- | --- | --- |
+| Everything | ✅ Implemented | [`cmd/everything/README.md`](./cmd/everything/README.md) · [`docs/parity.md#🌐-everything-server`](./docs/parity.md#🌐-everything-server) |
 | Fetch | ✅ Implemented | [`cmd/fetch/README.md`](./cmd/fetch/README.md) · [`docs/parity.md#🌐-fetch-server`](./docs/parity.md#🌐-fetch-server) |
 | Filesystem | ✅ Implemented | [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) |
 | Memory | ✅ Implemented | [`cmd/memory/README.md`](./cmd/memory/README.md) · [`docs/parity.md#🧠-memory-server`](./docs/parity.md#🧠-memory-server) |
 | Sequential Thinking | ✅ Implemented | [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) · [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server) |
 | Time | ✅ Implemented | [`cmd/time/README.md`](./cmd/time/README.md) · [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server) |
-| Everything | ✅ Implemented | [`cmd/everything/README.md`](./cmd/everything/README.md) · [`docs/parity.md#🌐-everything-server`](./docs/parity.md#🌐-everything-server) |
 | Git | 🚧 Placeholder | _TBD_ |
 
 ## Contributing
-- Review `docs/parity.md` for the outstanding parity tasks per server.
-- Prefer minimal, well-reviewed third-party dependencies; stick to stdlib where practical.
-- Document any divergence from the upstream reference behavior directly in the parity doc.
+- Keep `docs/parity.md` updated when behavior diverges from upstream references.
+- Favor stdlib and minimal dependencies; vendor changes with `go work vendor`.
+- Follow project test conventions (`go test -p=1 -count=1 -cover ./...`), and document intentional gaps.
