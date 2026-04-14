@@ -15,10 +15,10 @@ This is a Go-native implementation of the reference Time MCP server. It provides
 
 ```bash
 # Build
-go build -o /tmp/time-server ./cmd/time
+go build -o /tmp/time-mcp ./cmd/time-mcp
 
 # Run
-/tmp/time-server
+/tmp/time-mcp
 ```
 
 ## IDE Configuration
@@ -29,7 +29,7 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 {
   "mcpServers": {
     "time": {
-      "command": "/tmp/time-server",
+      "command": "/tmp/time-mcp",
       "args": []
     }
   }
@@ -39,9 +39,9 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 ## MCP Inspector
 
 ```bash
-npx @modelcontextprotocol/inspector /tmp/time-server
+npx @modelcontextprotocol/inspector /tmp/time-mcp
 ```
 
 ## Examples
 
-See [`../../examples/time`](../../examples/time) for a demo of interacting with this server using the Go MCP SDK.
+See [`../../examples/time-mcp`](../../examples/time-mcp) for a demo of interacting with this server using the Go MCP SDK.

@@ -1,19 +1,17 @@
-module github.com/aqua777/mcp-servers/examples/filesystem
+module github.com/aqua777/mcp-servers/examples
 
 go 1.25.8
 
-replace github.com/aqua777/mcp-servers => ../..
-replace github.com/aqua777/mcp-servers/examples/utils => ../utils
+replace github.com/aqua777/mcp-servers => ../
 
 require (
 	github.com/aqua777/krait v0.0.1
-	github.com/aqua777/mcp-servers/examples/utils v0.0.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/sashabaranov/go-openai v1.41.2
 )
 
 require (
-	// github.com/aqua777/krait/testing v0.0.0-20250823172035-5bce5a842776 // indirect
+	github.com/aqua777/krait/testing v0.0.0-20260329210039-38899a556729 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
