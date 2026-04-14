@@ -9,6 +9,7 @@ import (
 
 	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
+	"github.com/mattn/go-runewidth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -66,21 +67,24 @@ func (s *ServerState) formatThought(thoughtData ThoughtData) string {
 	thoughtLines := strings.Split(thoughtData.Thought, "\n")
 	maxThoughtLen := 0
 	for _, line := range thoughtLines {
-		if len(line) > maxThoughtLen {
-			maxThoughtLen = len(line)
+		lineWidth := runewidth.StringWidth(line)
+		if lineWidth > maxThoughtLen {
+			maxThoughtLen = lineWidth
 		}
 	}
 
-	borderLen := max(len(cleanHeader), maxThoughtLen) + 4
+	headerWidth := runewidth.StringWidth(cleanHeader)
+	borderLen := max(headerWidth, maxThoughtLen) + 4
 	border := strings.Repeat("─", borderLen)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n┌%s┐\n", border))
-	sb.WriteString(fmt.Sprintf("│ %s%s │\n", header, strings.Repeat(" ", borderLen-len(cleanHeader)-2)))
+	sb.WriteString(fmt.Sprintf("│ %s%s │\n", header, strings.Repeat(" ", borderLen-headerWidth-2)))
 	sb.WriteString(fmt.Sprintf("├%s┤\n", border))
 
 	for _, line := range thoughtLines {
-		sb.WriteString(fmt.Sprintf("│ %s%s │\n", line, strings.Repeat(" ", borderLen-len(line)-2)))
+		lineWidth := runewidth.StringWidth(line)
+		sb.WriteString(fmt.Sprintf("│ %s%s │\n", line, strings.Repeat(" ", borderLen-lineWidth-2)))
 	}
 	sb.WriteString(fmt.Sprintf("└%s┘", border))
 

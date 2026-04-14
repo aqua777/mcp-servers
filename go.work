@@ -11,6 +11,7 @@ use (
 	./examples/filesystem
 	./examples/memory
 	./examples/sequentialthinking
+	./examples/git
 	./examples/time
 	./examples/utils
 // ./cmd/everything

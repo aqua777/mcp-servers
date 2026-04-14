@@ -13,7 +13,7 @@ require (
 )
 
 require (
-	github.com/aqua777/krait/testing v0.0.0-20250823172035-5bce5a842776 // indirect
+	// github.com/aqua777/krait/testing v0.0.0-20250823172035-5bce5a842776 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect

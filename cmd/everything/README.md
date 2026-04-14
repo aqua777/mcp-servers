@@ -31,3 +31,58 @@ Starts an HTTP server on port `3001` serving the Streamable HTTP transport on `/
 * **Prompts**: `simple-prompt`, `args-prompt`
 * **Resources**: Demonstrates `demo://resource/dynamic/text/{id}` and `demo://resource/dynamic/blob/{id}` URI templates logic
 * **Server Notifications**: Background goroutines that simulate logging messages and resource updates.
+
+## IDE Configuration
+
+Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude Desktop / Claude Code):
+
+**stdio transport (recommended for IDE use):**
+
+```json
+{
+  "mcpServers": {
+    "everything": {
+      "command": "/tmp/everything-server",
+      "args": ["stdio"]
+    }
+  }
+}
+```
+
+**SSE transport** (starts HTTP server on port `3001`):
+
+```json
+{
+  "mcpServers": {
+    "everything": {
+      "command": "/tmp/everything-server",
+      "args": ["sse"]
+    }
+  }
+}
+```
+
+**Streamable HTTP transport** (starts HTTP server on port `3001`):
+
+```json
+{
+  "mcpServers": {
+    "everything": {
+      "command": "/tmp/everything-server",
+      "args": ["streamableHttp"]
+    }
+  }
+}
+```
+
+## Build
+
+```bash
+go build -o /tmp/everything-server ./cmd/everything
+```
+
+## MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector /tmp/everything-server
+```

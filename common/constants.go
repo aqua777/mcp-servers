@@ -7,4 +7,5 @@ const (
 	MCP_Memory             = "memory"
 	MCP_Time               = "time"
 	MCP_Everything         = "everything"
+	MCP_Git                = "git"
 )

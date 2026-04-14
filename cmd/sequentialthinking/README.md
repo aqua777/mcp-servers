@@ -40,3 +40,57 @@ The Sequential Thinking tool is designed for:
 - Situations where irrelevant information needs to be filtered out
 
 To disable logging of thought information to standard error, set the environment variable: `DISABLE_THOUGHT_LOGGING` to `true`.
+
+## Usage
+
+```bash
+# Build
+go build -o /tmp/sequentialthinking-server ./cmd/sequentialthinking
+
+# Run
+/tmp/sequentialthinking-server
+
+# Run with thought logging disabled
+DISABLE_THOUGHT_LOGGING=true /tmp/sequentialthinking-server
+```
+
+## IDE Configuration
+
+Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude Desktop / Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "sequentialthinking": {
+      "command": "/tmp/sequentialthinking-server",
+      "args": []
+    }
+  }
+}
+```
+
+To suppress thought logging in the IDE terminal:
+
+```json
+{
+  "mcpServers": {
+    "sequentialthinking": {
+      "command": "/tmp/sequentialthinking-server",
+      "args": [],
+      "env": {
+        "DISABLE_THOUGHT_LOGGING": "true"
+      }
+    }
+  }
+}
+```
+
+## MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector /tmp/sequentialthinking-server
+```
+
+## Examples
+
+See [`../../examples/sequentialthinking`](../../examples/sequentialthinking) for a demo of interacting with this server using the Go MCP SDK.

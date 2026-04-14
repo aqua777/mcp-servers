@@ -11,22 +11,37 @@ This is a Go-native implementation of the reference Time MCP server. It provides
 - `get_current_time`: Get current time in a specific timezone (e.g., 'America/New_York', 'Europe/London').
 - `convert_time`: Convert a specific time (HH:MM) from one timezone to another.
 
-## Building
-
-From the `golang` directory:
+## Usage
 
 ```bash
-go build -o time-server ./cmd/time
+# Build
+go build -o /tmp/time-server ./cmd/time
+
+# Run
+/tmp/time-server
 ```
 
-## Running
+## IDE Configuration
+
+Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude Desktop / Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "time": {
+      "command": "/tmp/time-server",
+      "args": []
+    }
+  }
+}
+```
+
+## MCP Inspector
 
 ```bash
-./time-server
+npx @modelcontextprotocol/inspector /tmp/time-server
 ```
 
-## Example Usage (with mcp inspector)
+## Examples
 
-```bash
-npx @modelcontextprotocol/inspector ./time-server
-```
+See [`../../examples/time`](../../examples/time) for a demo of interacting with this server using the Go MCP SDK.
