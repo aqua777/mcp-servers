@@ -46,7 +46,7 @@ func runFileSystemMCPServer(args []string) error {
 	// 1. Setup the actual Transport (the "wire")
 	// Start the filesystem MCP server process
 	// We pass the allowed directories as arguments to the command
-	cmdArgs := append([]string{"run", "../../cmd/filesystem/main.go"}, allowedDirs...)
+	cmdArgs := append([]string{"run", "../../cmd/fs-mcp/main.go"}, allowedDirs...)
 	execCmd := exec.Command("go", cmdArgs...)
 	execCmd.Stderr = os.Stderr
 

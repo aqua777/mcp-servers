@@ -6,24 +6,24 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/aqua777/krait"
 	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/aqua777/mcp-servers/core/pkg/tools/filesystem"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <allowed-directory> [allowed-directory...]\n", os.Args[0])
-		os.Exit(1)
+func runFilesystemServer(args []string) error {
+	allowedDirectories := krait.GetStringSlice("app.allowed-directories")
+
+	if len(allowedDirectories) == 0 {
+		return fmt.Errorf("at least one allowed directory must be specified")
 	}
 
-	allowedDirectories := os.Args[1:]
-
+	// Convert to absolute paths
 	for i, dir := range allowedDirectories {
 		absDir, err := filepath.Abs(dir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving absolute path for %s: %v\n", dir, err)
-			os.Exit(1)
+			return fmt.Errorf("error resolving absolute path for %s: %w", dir, err)
 		}
 		allowedDirectories[i] = absDir
 	}
@@ -33,9 +33,20 @@ func main() {
 	}
 
 	ctx := context.Background()
-
 	if err := runtime.Run(ctx, common.MCP_FileSystem, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running filesystem server: %v\n", err)
+		return fmt.Errorf("error running filesystem server: %w", err)
+	}
+	return nil
+}
+
+func main() {
+	app := krait.App(common.MCP_FileSystem, "Filesystem MCP Server", "An MCP server that provides sandboxed filesystem access tools.").
+		WithConfig("", "config", "c", "APP_CONFIG").
+		WithStringSliceP("app.allowed-directories", "Allowed directories for filesystem access", "allowed-directories", "", "", []string{}).
+		WithRun(runFilesystemServer)
+
+	if err := app.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal error: %v\n", err)
 		os.Exit(1)
 	}
 }

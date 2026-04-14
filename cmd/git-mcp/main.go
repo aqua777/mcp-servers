@@ -26,7 +26,7 @@ func runGitServer(args []string) error {
 }
 
 func main() {
-	app := krait.App("git-server", "Git MCP Server", "An MCP server that provides tools to read, search, and manipulate Git repositories.").
+	app := krait.App(common.MCP_Git, "Git MCP Server", "An MCP server that provides tools to read, search, and manipulate Git repositories.").
 		WithConfig("", "config", "c", "APP_CONFIG").
 		WithStringP("app.repository", "Restrict operations to a specific repository path", "repository", "r", "GIT_REPOSITORY", "").
 		WithRun(runGitServer)

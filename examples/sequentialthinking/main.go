@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/aqua777/krait"
 	"github.com/aqua777/mcp-servers/examples/utils"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sashabaranov/go-openai"
@@ -18,11 +19,13 @@ const (
 	llmModel = "qwen3:0.6b" // Use a model available in Ollama
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Usage: go run main.go \"Your complex query here (e.g. math or logic puzzle)\"")
+func runSequentialThinkingMCPServer(args []string) error {
+	userQuery := strings.Join(args, " ")
+
+	if len(userQuery) == 0 {
+		return fmt.Errorf("usage: go run main.go [flags] \"Your complex query here (e.g. math or logic puzzle)\"")
 	}
-	userQuery := strings.Join(os.Args[1:], " ")
+
 	ctx := context.Background()
 
 	// 1. Setup the actual Transport (the "wire")
@@ -32,15 +35,15 @@ func main() {
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer cmd.Process.Kill()
 
@@ -58,14 +61,14 @@ func main() {
 	// 3. Connect the client to the transport
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer session.Close()
 
 	// 4. Discover Tools from MCP Server
 	toolsResult, err := session.ListTools(ctx, nil)
 	if err != nil {
-		log.Fatalf("ListTools Error: %v", err)
+		return fmt.Errorf("ListTools Error: %v", err)
 	}
 	fmt.Printf("Discovered tools: %d\n", len(toolsResult.Tools))
 
@@ -105,7 +108,7 @@ func main() {
 			Tools:    ollamaTools,
 		})
 		if err != nil {
-			log.Fatalf("LLM Error: %v", err)
+			return fmt.Errorf("LLM Error: %v", err)
 		}
 
 		msg := resp.Choices[0].Message
@@ -131,7 +134,7 @@ func main() {
 				Arguments: args,
 			})
 			if err != nil {
-				log.Fatalf("MCP Call Error: %v", err)
+				return fmt.Errorf("MCP Call Error: %v", err)
 			}
 
 			toolResultContent, _ := json.Marshal(callResp.Content)
@@ -143,5 +146,16 @@ func main() {
 				ToolCallID: tc.ID,
 			})
 		}
+	}
+	return nil
+}
+
+func main() {
+	app := krait.App("example-sequentialthinking", "An example chat app that uses the sequentialthinking MCP server", "An example chat app that uses the sequentialthinking MCP server").
+		WithConfig("", "config", "c", "APP_CONFIG").
+		WithRun(runSequentialThinkingMCPServer)
+
+	if err := app.Execute(); err != nil {
+		log.Fatal(err)
 	}
 }

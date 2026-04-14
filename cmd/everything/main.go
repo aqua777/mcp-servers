@@ -65,7 +65,7 @@ func runEverythingServer(args []string) error {
 }
 
 func main() {
-	app := krait.App("everything-server", "Everything MCP Server", "A Go port of the Everything reference server.").
+	app := krait.App(common.MCP_Everything, "Everything MCP Server", "A Go port of the Everything reference server.").
 		WithConfig("", "config", "c", "APP_CONFIG").
 		WithIntP("app.port", "Port to listen on for SSE/HTTP transports", "port", "p", "PORT", 3001).
 		WithInt("app.gzip-max-fetch-size", "Maximum fetch size in bytes for gzip tool", "gzip-max-fetch-size", "GZIP_MAX_FETCH_SIZE", 10*1024*1024).
