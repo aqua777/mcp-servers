@@ -1,0 +1,7 @@
+module github.com/aqua777/mcp-servers/cmd/everything
+
+go 1.24.0
+
+require (
+	github.com/aqua777/mcp-servers v0.0.0
+)
