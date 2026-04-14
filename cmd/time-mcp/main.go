@@ -25,7 +25,6 @@ func runTimeServer(args []string) error {
 
 func main() {
 	app := krait.App(common.MCP_Time, "Time MCP Server", "An MCP server that provides time retrieval and timezone conversion capabilities.").
-		WithConfig("", "config", "c", "APP_CONFIG").
 		WithRun(runTimeServer)
 
 	if err := app.Execute(); err != nil {

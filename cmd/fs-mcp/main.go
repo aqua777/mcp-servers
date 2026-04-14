@@ -41,7 +41,6 @@ func runFilesystemServer(args []string) error {
 
 func main() {
 	app := krait.App(common.MCP_FileSystem, "Filesystem MCP Server", "An MCP server that provides sandboxed filesystem access tools.").
-		WithConfig("", "config", "c", "APP_CONFIG").
 		WithStringSliceP("app.allowed-directories", "Allowed directories for filesystem access", "allowed-directories", "", "", []string{}).
 		WithRun(runFilesystemServer)
 

@@ -31,7 +31,6 @@ func runFetchServer(args []string) error {
 
 func main() {
 	app := krait.App(common.MCP_Fetch, "Fetch MCP Server", "An MCP server that fetches URLs and returns content as markdown with robots.txt enforcement.").
-		WithConfig("", "config", "c", "APP_CONFIG").
 		WithStringP("app.user-agent", "Custom User-Agent string", "user-agent", "", "", "").
 		WithBoolP("app.ignore-robots-txt", "Ignore robots.txt restrictions", "ignore-robots-txt", "", "", false).
 		WithStringP("app.proxy-url", "Proxy URL to use for requests", "proxy-url", "", "", "").
