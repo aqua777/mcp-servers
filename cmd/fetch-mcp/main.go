@@ -2,44 +2,42 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
+	"github.com/aqua777/krait"
 	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
 	"github.com/aqua777/mcp-servers/core/pkg/tools/fetch"
 )
 
-func main() {
-	var (
-		userAgent       = flag.String("user-agent", "", "Custom User-Agent string")
-		ignoreRobotsTxt = flag.Bool("ignore-robots-txt", false, "Ignore robots.txt restrictions")
-		proxyURL        = flag.String("proxy-url", "", "Proxy URL to use for requests")
-	)
-
-	flag.Parse()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		cancel()
-	}()
+func runFetchServer(args []string) error {
+	userAgent := krait.GetString("app.user-agent")
+	ignoreRobotsTxt := krait.GetBool("app.ignore-robots-txt")
+	proxyURL := krait.GetString("app.proxy-url")
 
 	opts := fetch.Options{
-		CustomUserAgent: *userAgent,
-		IgnoreRobotsTxt: *ignoreRobotsTxt,
-		ProxyURL:        *proxyURL,
+		CustomUserAgent: userAgent,
+		IgnoreRobotsTxt: ignoreRobotsTxt,
+		ProxyURL:        proxyURL,
 	}
 
+	ctx := context.Background()
 	if err := runtime.Run(ctx, common.MCP_Fetch, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return fmt.Errorf("error running fetch server: %w", err)
+	}
+	return nil
+}
+
+func main() {
+	app := krait.App(common.MCP_Fetch, "Fetch MCP Server", "An MCP server that fetches URLs and returns content as markdown with robots.txt enforcement.").
+		WithStringP("app.user-agent", "Custom User-Agent string", "user-agent", "", "", "").
+		WithBoolP("app.ignore-robots-txt", "Ignore robots.txt restrictions", "ignore-robots-txt", "", "", false).
+		WithStringP("app.proxy-url", "Proxy URL to use for requests", "proxy-url", "", "", "").
+		WithRun(runFetchServer)
+
+	if err := app.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal error: %v\n", err)
 		os.Exit(1)
 	}
 }

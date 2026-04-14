@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/aqua777/krait"
 	"github.com/aqua777/mcp-servers/examples/utils"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sashabaranov/go-openai"
@@ -18,27 +19,29 @@ const (
 	llmModel = "qwen3:0.6b"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Usage: go run main.go \"Your query here, e.g. What is the current time in Europe/Paris?\"")
+func runTimeMCPServer(args []string) error {
+	userQuery := strings.Join(args, " ")
+
+	if len(userQuery) == 0 {
+		return fmt.Errorf("usage: go run main.go [flags] \"Your query here, e.g. What is the current time in Europe/Paris?\"")
 	}
-	userQuery := strings.Join(os.Args[1:], " ")
+
 	ctx := context.Background()
 
-	cmd := exec.Command("go", "run", "../../cmd/time/main.go")
+	cmd := exec.Command("go", "run", "../../cmd/time-mcp/main.go")
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer cmd.Process.Kill()
 
@@ -54,13 +57,13 @@ func main() {
 
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer session.Close()
 
 	toolsResult, err := session.ListTools(ctx, nil)
 	if err != nil {
-		log.Fatalf("ListTools Error: %v", err)
+		return fmt.Errorf("ListTools Error: %v", err)
 	}
 	fmt.Printf("Discovered tools: %s\n", utils.JsonStr(toolsResult.Tools))
 
@@ -90,7 +93,7 @@ func main() {
 		Tools:    ollamaTools,
 	})
 	if err != nil {
-		log.Fatalf("LLM Error: %v", err)
+		return fmt.Errorf("LLM Error: %v", err)
 	}
 
 	msg := resp.Choices[0].Message
@@ -108,7 +111,7 @@ func main() {
 				Arguments: args,
 			})
 			if err != nil {
-				log.Fatalf("MCP Call Error: %v", err)
+				return fmt.Errorf("MCP Call Error: %v", err)
 			}
 
 			toolResultContent, _ := json.Marshal(callResp.Content)
@@ -129,5 +132,16 @@ func main() {
 		fmt.Println("\n🤖 Response:", finalResp.Choices[0].Message.Content)
 	} else {
 		fmt.Println("\n🤖 Response:", msg.Content)
+	}
+	return nil
+}
+
+func main() {
+	app := krait.App("example-time", "An example chat app that uses the time MCP server", "An example chat app that uses the time MCP server").
+		WithConfig("", "config", "c", "APP_CONFIG").
+		WithRun(runTimeMCPServer)
+
+	if err := app.Execute(); err != nil {
+		log.Fatal(err)
 	}
 }

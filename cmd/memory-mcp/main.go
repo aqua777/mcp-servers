@@ -29,8 +29,7 @@ func runMemoryServer(args []string) error {
 }
 
 func main() {
-	app := krait.App("memory-server", "Memory MCP Server", "An MCP server that provides a simple file-based knowledge graph for storing entities, relations, and observations.").
-		WithConfig("", "config", "c", "APP_CONFIG").
+	app := krait.App(common.MCP_Memory, "Memory MCP Server", "An MCP server that provides a simple file-based knowledge graph for storing entities, relations, and observations.").
 		WithStringP("app.memory-file-path", "Path to the memory.jsonl file", "memory-file-path", "m", "MEMORY_FILE_PATH", "").
 		WithRun(runMemoryServer)
 

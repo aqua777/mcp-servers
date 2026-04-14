@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/aqua777/krait"
 	"github.com/aqua777/mcp-servers/examples/utils"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sashabaranov/go-openai"
@@ -18,28 +19,34 @@ const (
 	llmModel = "qwen3:0.6b"
 )
 
-func main() {
-	if len(os.Args) < 3 {
-		log.Fatal("Usage: go run main.go <repo_path> \"Your query here, e.g. What is the status of this repo?\"")
+func runGitMCPServer(args []string) error {
+	repoPath := krait.GetString("app.repository")
+	userQuery := strings.Join(args, " ")
+
+	if len(repoPath) == 0 {
+		return fmt.Errorf("repository path must be specified using --repository flag")
 	}
-	repoPath := os.Args[1]
-	userQuery := strings.Join(os.Args[2:], " ")
+
+	if len(userQuery) == 0 {
+		return fmt.Errorf("usage: go run main.go --repository <repo_path> \"Your query here, e.g. What is the status of this repo?\"")
+	}
+
 	ctx := context.Background()
 
-	cmd := exec.Command("go", "run", "../../cmd/git/main.go")
+	cmd := exec.Command("go", "run", "../../cmd/git-mcp/main.go", "--repository", repoPath)
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer cmd.Process.Kill()
 
@@ -55,13 +62,13 @@ func main() {
 
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	defer session.Close()
 
 	toolsResult, err := session.ListTools(ctx, nil)
 	if err != nil {
-		log.Fatalf("ListTools Error: %v", err)
+		return fmt.Errorf("ListTools Error: %v", err)
 	}
 	fmt.Printf("Discovered tools: %s\n", utils.JsonStr(toolsResult.Tools))
 
@@ -97,7 +104,7 @@ func main() {
 		Tools:    ollamaTools,
 	})
 	if err != nil {
-		log.Fatalf("LLM Error: %v", err)
+		return fmt.Errorf("LLM Error: %v", err)
 	}
 
 	msg := resp.Choices[0].Message
@@ -115,7 +122,7 @@ func main() {
 				Arguments: args,
 			})
 			if err != nil {
-				log.Fatalf("MCP Call Error: %v", err)
+				return fmt.Errorf("MCP Call Error: %v", err)
 			}
 
 			toolResultContent, _ := json.Marshal(callResp.Content)
@@ -136,5 +143,17 @@ func main() {
 		fmt.Println("\n🤖 Response:", finalResp.Choices[0].Message.Content)
 	} else {
 		fmt.Println("\n🤖 Response:", msg.Content)
+	}
+	return nil
+}
+
+func main() {
+	app := krait.App("example-git", "An example chat app that uses the git MCP server", "An example chat app that uses the git MCP server").
+		WithConfig("", "config", "c", "APP_CONFIG").
+		WithStringP("app.repository", "Repository path to analyze", "repository", "r", "GIT_REPOSITORY", "").
+		WithRun(runGitMCPServer)
+
+	if err := app.Execute(); err != nil {
+		log.Fatal(err)
 	}
 }

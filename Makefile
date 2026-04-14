@@ -19,3 +19,9 @@ dev-image:
 
 unit-tests:
 	$(DOCKER_RUN) $(DOCKER_RUN_ARGS) $(DOCKER_IMAGE) go-tests -v -no-cache -p=1 ./...
+
+build-test:
+	@for dir in $(shell ls -d cmd/*); do \
+		printf "%-50s" "$${dir}:"; \
+		($(DOCKER_RUN) $(DOCKER_RUN_ARGS) $(DOCKER_IMAGE) go build -o /dev/null -buildvcs=false ./$${dir}/... && echo "OK") || echo "FAIL"; \
+	done
