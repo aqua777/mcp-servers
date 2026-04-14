@@ -18,13 +18,13 @@ One or more allowed directories must be passed as positional arguments:
 
 ```bash
 # Build
-go build -o /tmp/filesystem-server ./cmd/filesystem
+go build -o /tmp/fs-mcp ./cmd/fs-mcp
 
 # Grant access to a single directory
-/tmp/filesystem-server /home/user/projects
+/tmp/fs-mcp /home/user/projects
 
 # Grant access to multiple directories
-/tmp/filesystem-server /home/user/projects /home/user/notes
+/tmp/fs-mcp /home/user/projects /home/user/notes
 ```
 
 ## Tools Exposed
@@ -53,7 +53,7 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 {
   "mcpServers": {
     "filesystem": {
-      "command": "/tmp/filesystem-server",
+      "command": "/tmp/fs-mcp",
       "args": ["/home/user/projects"]
     }
   }
@@ -66,7 +66,7 @@ To allow access to multiple directories:
 {
   "mcpServers": {
     "filesystem": {
-      "command": "/tmp/filesystem-server",
+      "command": "/tmp/fs-mcp",
       "args": ["/home/user/projects", "/home/user/notes"]
     }
   }
@@ -76,9 +76,9 @@ To allow access to multiple directories:
 ## MCP Inspector
 
 ```bash
-npx @modelcontextprotocol/inspector /tmp/filesystem-server /home/user/projects
+npx @modelcontextprotocol/inspector /tmp/fs-mcp /home/user/projects
 ```
 
 ## Examples
 
-See [`../../examples/filesystem`](../../examples/filesystem) for a demo of interacting with this server using the Go MCP SDK.
+See [`../../examples/fs-mcp`](../../examples/fs-mcp) for a demo of interacting with this server using the Go MCP SDK.

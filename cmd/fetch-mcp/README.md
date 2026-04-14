@@ -28,16 +28,16 @@ A Go implementation of the Fetch MCP Server. Fetches URLs and returns their cont
 
 ```bash
 # Build
-go build -o /tmp/fetch-server ./cmd/fetch
+go build -o /tmp/fetch-mcp ./cmd/fetch-mcp
 
 # Run (default — robots.txt enforced)
-/tmp/fetch-server
+/tmp/fetch-mcp
 
 # Run ignoring robots.txt
-/tmp/fetch-server --ignore-robots-txt
+/tmp/fetch-mcp --ignore-robots-txt
 
 # Run with a proxy
-/tmp/fetch-server --proxy-url "http://proxy.example.com:8080"
+/tmp/fetch-mcp --proxy-url "http://proxy.example.com:8080"
 ```
 
 ## IDE Configuration
@@ -48,7 +48,7 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 {
   "mcpServers": {
     "fetch": {
-      "command": "/tmp/fetch-server",
+      "command": "/tmp/fetch-mcp",
       "args": []
     }
   }
@@ -61,7 +61,7 @@ To disable robots.txt enforcement:
 {
   "mcpServers": {
     "fetch": {
-      "command": "/tmp/fetch-server",
+      "command": "/tmp/fetch-mcp",
       "args": ["--ignore-robots-txt"]
     }
   }
@@ -74,7 +74,7 @@ To route through a proxy:
 {
   "mcpServers": {
     "fetch": {
-      "command": "/tmp/fetch-server",
+      "command": "/tmp/fetch-mcp",
       "args": ["--proxy-url", "http://proxy.example.com:8080"]
     }
   }
@@ -84,9 +84,9 @@ To route through a proxy:
 ## MCP Inspector
 
 ```bash
-npx @modelcontextprotocol/inspector /tmp/fetch-server
+npx @modelcontextprotocol/inspector /tmp/fetch-mcp
 ```
 
 ## Examples
 
-See [`../../examples/fetch`](../../examples/fetch) for a demo of interacting with this server using the Go MCP SDK.
+See [`../../examples/fetch-mcp`](../../examples/fetch-mcp) for a demo of interacting with this server using the Go MCP SDK.

@@ -36,16 +36,16 @@ A Go implementation of the Git MCP Server, mirroring the reference Python implem
 
 ```bash
 # Build
-go build -o /tmp/git-server ./cmd/git
+go build -o /tmp/git-mcp ./cmd/git-mcp
 
 # Run (unrestricted — any repo path is accepted)
-/tmp/git-server
+/tmp/git-mcp
 
 # Run restricted to a specific repository
-/tmp/git-server --repository /path/to/my/repo
+/tmp/git-mcp --repository /path/to/my/repo
 
 # Or via environment variable
-GIT_REPOSITORY=/path/to/my/repo /tmp/git-server
+GIT_REPOSITORY=/path/to/my/repo /tmp/git-mcp
 ```
 
 ## IDE Configuration
@@ -56,7 +56,7 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 {
   "mcpServers": {
     "git": {
-      "command": "/tmp/git-server",
+      "command": "/tmp/git-mcp",
       "args": []
     }
   }
@@ -69,7 +69,7 @@ To restrict operations to a specific repository:
 {
   "mcpServers": {
     "git": {
-      "command": "/tmp/git-server",
+      "command": "/tmp/git-mcp",
       "args": ["--repository", "/path/to/my/repo"]
     }
   }
@@ -82,7 +82,7 @@ Or use the environment variable instead of a flag:
 {
   "mcpServers": {
     "git": {
-      "command": "/tmp/git-server",
+      "command": "/tmp/git-mcp",
       "args": [],
       "env": {
         "GIT_REPOSITORY": "/path/to/my/repo"
@@ -95,9 +95,9 @@ Or use the environment variable instead of a flag:
 ## MCP Inspector
 
 ```bash
-npx @modelcontextprotocol/inspector /tmp/git-server
+npx @modelcontextprotocol/inspector /tmp/git-mcp
 ```
 
 ## Examples
 
-See [`../../examples/git`](../../examples/git) for a demo of interacting with this server using the Go MCP SDK.
+See [`../../examples/git-mcp`](../../examples/git-mcp) for a demo of interacting with this server using the Go MCP SDK.
