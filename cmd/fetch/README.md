@@ -1,27 +1,92 @@
-# Fetch Command
+# Fetch MCP Server (Golang)
 
-## Overview
-The `fetch` command is a Go entrypoint that wires the runtime tooling in `github.com/aqua777/mcp-servers/core/pkg` to a CLI-friendly executable. It:
+A Go implementation of the Fetch MCP Server. Fetches URLs and returns their content as markdown, with robots.txt enforcement and optional proxy support.
 
-1. Parses a small set of network-tuning flags (`--user-agent`, `--ignore-robots-txt`, `--proxy-url`).
-2. Sets up a cancellable context and listens for `SIGINT`/`SIGTERM` so long-running fetches exit gracefully.
-3. Builds a `fetch.Options` struct from the parsed flags.
-4. Hands control to `runtime.Run(ctx, "fetch", opts)` which loads the `fetch` tool implementation from the shared runtime and executes it with the configured options.
-5. Reports any runtime errors to `stderr` and returns a non-zero exit code so calling scripts can detect failures.
+## Features
 
-## Flag Details
-- `--user-agent string`: overrides the default User-Agent header sent with HTTP requests.
-- `--ignore-robots-txt`: when true, instructs the underlying fetch tool to skip robots.txt compliance checks (use with caution).
-- `--proxy-url string`: routes outgoing requests through the provided proxy URL.
+- Converts HTML pages to clean markdown via readability extraction
+- Enforces `robots.txt` by default (bypass with `--ignore-robots-txt`)
+- Optional HTTP/HTTPS proxy support
+- Content chunking with `start_index` / `max_length` parameters
+- Raw mode to skip HTML→markdown conversion
 
-## Signal Handling & Cancellation
-Immediately after parsing flags, `main` creates a `context.WithCancel` and registers for `SIGINT` and `SIGTERM`. When either signal arrives, the goroutine cancels the context, giving the runtime a chance to unwind in-flight work before the process exits.
+## Configuration
 
-## Runtime Integration
-`runtime.Run` is the shared entrypoint used across MCP servers. For this command it is invoked with the tool key `"fetch"` and the `fetch.Options` built from the CLI flags. The runtime is responsible for:
+| Flag | Env Var | Description |
+|------|---------|-------------|
+| `--user-agent` | — | Override the default User-Agent header |
+| `--ignore-robots-txt` | — | Skip robots.txt compliance checks |
+| `--proxy-url` | — | Route all requests through this proxy URL |
 
-- Loading the fetch tool implementation.
-- Passing along the structured options.
-- Managing lifecycle hooks, logging, and other cross-tool concerns.
+## Tools Exposed
 
-Any error returned from `runtime.Run` is printed and causes the process to exit with status code `1` so upstream automation can treat the command as failed.
+| Tool | Description |
+|------|-------------|
+| `fetch` | Fetch a URL and return its content as markdown (or raw) |
+
+## Usage
+
+```bash
+# Build
+go build -o /tmp/fetch-server ./cmd/fetch
+
+# Run (default — robots.txt enforced)
+/tmp/fetch-server
+
+# Run ignoring robots.txt
+/tmp/fetch-server --ignore-robots-txt
+
+# Run with a proxy
+/tmp/fetch-server --proxy-url "http://proxy.example.com:8080"
+```
+
+## IDE Configuration
+
+Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude Desktop / Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "/tmp/fetch-server",
+      "args": []
+    }
+  }
+}
+```
+
+To disable robots.txt enforcement:
+
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "/tmp/fetch-server",
+      "args": ["--ignore-robots-txt"]
+    }
+  }
+}
+```
+
+To route through a proxy:
+
+```json
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "/tmp/fetch-server",
+      "args": ["--proxy-url", "http://proxy.example.com:8080"]
+    }
+  }
+}
+```
+
+## MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector /tmp/fetch-server
+```
+
+## Examples
+
+See [`../../examples/fetch`](../../examples/fetch) for a demo of interacting with this server using the Go MCP SDK.

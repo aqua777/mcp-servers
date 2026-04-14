@@ -23,5 +23,56 @@ You can specify the memory file path using the `krait` flags or environment vari
 - `search_nodes`: Search for nodes based on a text query.
 - `open_nodes`: Open specific nodes by their names.
 
+## Usage
+
+```bash
+# Build
+go build -o /tmp/memory-server ./cmd/memory
+
+# Run with default storage location (memory.jsonl next to binary)
+/tmp/memory-server
+
+# Run with explicit file path
+/tmp/memory-server --memory-file-path /tmp/mcp-memory.jsonl
+```
+
+## IDE Configuration
+
+Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude Desktop / Claude Code):
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "/tmp/memory-server",
+      "args": ["--memory-file-path", "/path/to/memory.jsonl"]
+    }
+  }
+}
+```
+
+Or via environment variable:
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "/tmp/memory-server",
+      "args": [],
+      "env": {
+        "MEMORY_FILE_PATH": "/path/to/memory.jsonl"
+      }
+    }
+  }
+}
+```
+
+## MCP Inspector
+
+```bash
+npx @modelcontextprotocol/inspector /tmp/memory-server
+```
+
 ## Examples
-See `../../examples/memory` for an example of how to interact with this server using the Go SDK.
+
+See [`../../examples/memory`](../../examples/memory) for a demo of interacting with this server using the Go MCP SDK.

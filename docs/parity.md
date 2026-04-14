@@ -220,3 +220,62 @@ This document tracks feature parity between the Go implementations and their res
 
 ## 📋 Testing Status
 - Basic tools and server setup are tested via `go test`. Coverage includes error handling serialization formatting logic. Advanced tools like gzip, elicitation, and sampling have basic registration and null-session bounds checking.
+
+---
+
+## 🗂️ Git Server
+
+### ✅ Implemented Features
+
+#### Core Git Operations
+- **`git_status`** - Working tree status
+- **`git_diff_unstaged`** - Unstaged diff (working tree vs index)
+- **`git_diff_staged`** - Staged diff (index vs HEAD)
+- **`git_diff`** - Diff between current HEAD and a target branch/commit
+- **`git_commit`** - Record staged changes with a message
+- **`git_add`** - Stage specific files or all changes (`"."`)
+- **`git_reset`** - Mixed reset to HEAD (unstage all)
+- **`git_log`** - Commit history with optional max count and date range filtering
+- **`git_create_branch`** - Create a branch from HEAD or an explicit base branch
+- **`git_checkout`** - Switch to an existing branch
+- **`git_show`** - Commit metadata and diff for any revision
+- **`git_branch`** - List local/remote/all branches with optional `contains`/`not_contains` SHA filters
+
+#### Security
+- **Repository path restriction** - `--repository` / `GIT_REPOSITORY` flag restricts all `repo_path` arguments to a configured directory
+- **Symlink-safe path validation** - Uses `filepath.EvalSymlinks` on both sides to prevent traversal via symlinks
+- **Flag injection protection** - Ref names starting with `-` are rejected before any git operation
+
+### 🔄 Known Differences
+
+#### Git Library
+- **Python**: Uses `GitPython` which shells out to the system `git` binary for many operations.
+- **Go**: Uses `go-git/go-git/v5` — a **pure Go** reimplementation. No system `git` binary required.
+
+#### Diff Output Format
+- **Python**: `git_diff_unstaged` and `git_diff_staged` call `repo.git.diff()` which uses the system git binary's unified diff format directly.
+- **Go**: Produces unified diff output using go-git's `UnifiedEncoder` and a custom character-level diff for unstaged changes. The output is functionally equivalent but may differ in whitespace or hunk headers in edge cases.
+
+#### Commit Authorship
+- **Python**: Uses the configured git identity from `.gitconfig`.
+- **Go**: Defaults to `MCP Git Server <mcp@localhost>` since go-git does not read `.gitconfig` automatically.
+
+#### Date Filtering in `git_log`
+- **Python**: Passes ISO 8601 timestamps directly to GitPython.
+- **Go**: Parses timestamps with support for ISO 8601, date-only (`YYYY-MM-DD`), and relative formats (`2 weeks ago`, `yesterday`, `3 days ago`, `1 month ago`, etc.)
+
+### ⚠️ Limitations
+
+#### Not Implemented
+- **Remote operations** — `git_push`, `git_pull`, `git_fetch` are not part of the Python reference tool set and are not implemented.
+- **Stash** — Not in the Python reference.
+- **Merge/Rebase** — Not in the Python reference.
+
+#### Intentional Differences
+- **Commit author** — Go version uses a fixed author signature; Python uses system git identity.
+- **Bare repository support** — Operations requiring a worktree (status, diff, add, commit, reset, checkout) will return an error on bare repos. This matches practical usage.
+
+## 📋 Testing Status
+- Unit tests (`validation_test.go`, `server_test.go`) written via `testify/suite`.
+- Coverage: **≥ 90%** achieved.
+- Remaining uncovered branches are internal go-git I/O error paths that require mocking go-git internals; documented in test files per AGENTS.md exception policy.

@@ -25,15 +25,12 @@
 - **Filesystem** – Read/write/edit/search tools with sandboxing. See [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/filesystem`](./examples/filesystem).
 - **Memory** – JSONL-backed graph store with create/read/search/delete tools. See [`cmd/memory/README.md`](./cmd/memory/README.md) and [`examples/memory`](./examples/memory).
 - **Sequential Thinking** – In-memory thought history tools. See [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) and [`examples/sequentialthinking`](./examples/sequentialthinking).
+- **Git** – Pure-Go git tools (status, diff, add, commit, reset, log, branch, checkout, show) with optional repository path restriction and flag-injection protection. See [`cmd/git/README.md`](./cmd/git/README.md) and [`examples/git`](./examples/git).
 - **Time** – Current time and timezone conversion tools. See [`cmd/time/README.md`](./cmd/time/README.md) and [`examples/time`](./examples/time).
-
-### 🚧 Planned / Placeholder
-- **Git** – Stub only; implementation not started.
 
 ## Current Status (high-level)
 - ✅ Workspace + shared runtime in `core`
 - ✅ Servers above implemented with docs + examples; parity tracked in `docs/parity.md`
-- 🚧 Git server not implemented
 
 ## Quick Start
 
@@ -68,6 +65,10 @@ DISABLE_THOUGHT_LOGGING=true go run ./cmd/sequentialthinking
 go build -o /tmp/time-server ./cmd/time
 /tmp/time-server
 
+go build -o /tmp/git-server ./cmd/git
+/tmp/git-server                              # unrestricted
+/tmp/git-server --repository /path/to/repo   # restricted to one repo
+
 go build -o /tmp/everything ./cmd/everything
 /tmp/everything sse   # or: stdio | streamableHttp
 ```
@@ -97,7 +98,7 @@ npx @modelcontextprotocol/inspector ./<built-binary>
 | Memory | ✅ Implemented | [`cmd/memory/README.md`](./cmd/memory/README.md) · [`docs/parity.md#🧠-memory-server`](./docs/parity.md#🧠-memory-server) |
 | Sequential Thinking | ✅ Implemented | [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) · [`docs/parity.md#🧠-sequential-thinking-server`](./docs/parity.md#🧠-sequential-thinking-server) |
 | Time | ✅ Implemented | [`cmd/time/README.md`](./cmd/time/README.md) · [`docs/parity.md#⏰-time-server`](./docs/parity.md#⏰-time-server) |
-| Git | 🚧 Placeholder | _TBD_ |
+| Git | ✅ Implemented | [`cmd/git/README.md`](./cmd/git/README.md) · [`docs/parity.md#🗂️-git-server`](./docs/parity.md#🗂️-git-server) |
 
 ## Contributing
 - Keep `docs/parity.md` updated when behavior diverges from upstream references.
