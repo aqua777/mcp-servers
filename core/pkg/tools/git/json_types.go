@@ -33,6 +33,7 @@ type BranchInfo struct {
 // BranchResult holds the structured result of a git branch operation.
 type BranchResult struct {
 	CurrentBranch string       `json:"current_branch"`
+	IsDetached    bool         `json:"is_detached"`
 	Branches      []BranchInfo `json:"branches"`
 }
 
@@ -41,6 +42,7 @@ type FileChange struct {
 	Path    string `json:"path"`
 	OldPath string `json:"old_path,omitempty"`
 	Status  string `json:"status"`
+	Type    string `json:"type,omitempty"`
 }
 
 // RemoteInfo represents the remote tracking state.
@@ -114,12 +116,13 @@ type DiffSummary struct {
 
 // DiffResult holds the structured result of a diff operation.
 type DiffResult struct {
-	Status  string      `json:"status"`
-	Base    string      `json:"base,omitempty"`
-	Target  string      `json:"target,omitempty"`
-	Files   []DiffFile  `json:"files"`
-	Summary DiffSummary `json:"summary"`
-	RawText string      `json:"-"`
+	Status    string      `json:"status"`
+	Base      string      `json:"base,omitempty"`
+	Target    string      `json:"target,omitempty"`
+	Files     []DiffFile  `json:"files"`
+	Summary   DiffSummary `json:"summary"`
+	Truncated bool        `json:"truncated,omitempty"`
+	RawText   string      `json:"-"`
 }
 
 // ShowResult holds the structured result of a git show operation.

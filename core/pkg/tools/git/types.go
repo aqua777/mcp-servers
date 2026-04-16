@@ -30,4 +30,8 @@ type Options struct {
 	// Valid values: "text" (default), "json".
 	// Can be overridden per-call via the "format" tool parameter.
 	OutputFormat string
+
+	// AIMode enables AI-first defaults: JSON output, structured errors.
+	// When true, defaults to JSON format unless explicitly overridden.
+	AIMode bool
 }

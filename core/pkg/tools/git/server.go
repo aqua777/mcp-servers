@@ -58,9 +58,11 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
-				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
-				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
+				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
+				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -72,9 +74,11 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
-				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
-				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
+				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
+				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -86,10 +90,12 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
-				"target":        map[string]any{"type": "string", "description": "Target branch or commit to compare with"},
-				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
-				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
+				"target":               map[string]any{"type": "string", "description": "Target branch or commit to compare with"},
+				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
+				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
 			},
 			"required": []string{"repo_path", "target"},
 		},
@@ -186,9 +192,10 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"repo_path": map[string]any{"type": "string", "description": "Path to Git repository"},
-				"revision":  map[string]any{"type": "string", "description": "The revision (commit hash, branch name, tag) to show"},
-				"format":    map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
+				"revision":             map[string]any{"type": "string", "description": "The revision (commit hash, branch name, tag) to show"},
+				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
+				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
 			},
 			"required": []string{"repo_path", "revision"},
 		},
@@ -225,13 +232,16 @@ func (gs *GitServer) openRepo(repoPath string) (*gogit.Repository, error) {
 	return repo, nil
 }
 
-// resolveFormat returns the effective output format: per-call override > server default > text.
+// resolveFormat returns the effective output format: per-call override > server default > AIMode > text.
 func (gs *GitServer) resolveFormat(requestFormat string) string {
 	if requestFormat == FormatJSON || requestFormat == FormatText {
 		return requestFormat
 	}
 	if gs.options.OutputFormat == FormatJSON || gs.options.OutputFormat == FormatText {
 		return gs.options.OutputFormat
+	}
+	if gs.options.AIMode {
+		return FormatJSON
 	}
 	return FormatText
 }
@@ -242,17 +252,18 @@ func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolReque
 		Format   string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
 	result, err := gitStatus(repo)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
+	if format == FormatJSON {
 		return handleSuccess(formatStatusJSON(result))
 	}
 	return handleSuccess(formatStatusText(result))
@@ -260,85 +271,118 @@ func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolReque
 
 func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath     string `json:"repo_path"`
-		ContextLines *int   `json:"context_lines"`
-		Format       string `json:"format"`
+		RepoPath           string `json:"repo_path"`
+		ContextLines       *int   `json:"context_lines"`
+		Format             string `json:"format"`
+		MaxFiles           *int   `json:"max_files"`
+		IncludeDiffContent *bool  `json:"include_diff_content"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	contextLines := DefaultContextLines
 	if args.ContextLines != nil {
 		contextLines = *args.ContextLines
 	}
+	maxFiles := 0
+	if args.MaxFiles != nil {
+		maxFiles = *args.MaxFiles
+	}
+	includeDiffContent := true
+	if args.IncludeDiffContent != nil {
+		includeDiffContent = *args.IncludeDiffContent
+	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	result, err := gitDiffUnstaged(repo, contextLines)
+	result, err := gitDiffUnstaged(repo, contextLines, maxFiles)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
-		return handleSuccess(formatDiffJSON(result))
+	if format == FormatJSON {
+		return handleSuccess(formatDiffJSON(result, includeDiffContent))
 	}
 	return handleSuccess(formatDiffText(result))
 }
 
 func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath     string `json:"repo_path"`
-		ContextLines *int   `json:"context_lines"`
-		Format       string `json:"format"`
+		RepoPath           string `json:"repo_path"`
+		ContextLines       *int   `json:"context_lines"`
+		Format             string `json:"format"`
+		MaxFiles           *int   `json:"max_files"`
+		IncludeDiffContent *bool  `json:"include_diff_content"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	contextLines := DefaultContextLines
 	if args.ContextLines != nil {
 		contextLines = *args.ContextLines
 	}
+	maxFiles := 0
+	if args.MaxFiles != nil {
+		maxFiles = *args.MaxFiles
+	}
+	includeDiffContent := true
+	if args.IncludeDiffContent != nil {
+		includeDiffContent = *args.IncludeDiffContent
+	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	result, err := gitDiffStaged(repo, contextLines)
+	result, err := gitDiffStaged(repo, contextLines, maxFiles)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
-		return handleSuccess(formatDiffJSON(result))
+	if format == FormatJSON {
+		return handleSuccess(formatDiffJSON(result, includeDiffContent))
 	}
 	return handleSuccess(formatDiffText(result))
 }
 
 func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath     string `json:"repo_path"`
-		Target       string `json:"target"`
-		ContextLines *int   `json:"context_lines"`
-		Format       string `json:"format"`
+		RepoPath           string `json:"repo_path"`
+		Target             string `json:"target"`
+		ContextLines       *int   `json:"context_lines"`
+		Format             string `json:"format"`
+		MaxFiles           *int   `json:"max_files"`
+		IncludeDiffContent *bool  `json:"include_diff_content"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	if args.Target == "" {
-		return handleError(fmt.Errorf("missing required argument: target"))
+		return handleError(fmt.Errorf("missing required argument: target"), format)
 	}
 	contextLines := DefaultContextLines
 	if args.ContextLines != nil {
 		contextLines = *args.ContextLines
 	}
+	maxFiles := 0
+	if args.MaxFiles != nil {
+		maxFiles = *args.MaxFiles
+	}
+	includeDiffContent := true
+	if args.IncludeDiffContent != nil {
+		includeDiffContent = *args.IncludeDiffContent
+	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	result, err := gitDiff(repo, args.Target, contextLines)
+	result, err := gitDiff(repo, args.Target, contextLines, maxFiles)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
-		return handleSuccess(formatDiffJSON(result))
+	if format == FormatJSON {
+		return handleSuccess(formatDiffJSON(result, includeDiffContent))
 	}
 	return handleSuccess(formatDiffText(result))
 }
@@ -349,18 +393,18 @@ func (gs *GitServer) handleGitCommit(ctx context.Context, req *mcp.CallToolReque
 		Message  string `json:"message"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	if args.Message == "" {
-		return handleError(fmt.Errorf("missing required argument: message"))
+		return handleError(fmt.Errorf("missing required argument: message"), FormatText)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	result, err := gitCommit(repo, args.Message)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	return handleSuccess(result)
 }
@@ -371,18 +415,18 @@ func (gs *GitServer) handleGitAdd(ctx context.Context, req *mcp.CallToolRequest)
 		Files    []string `json:"files"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	if len(args.Files) == 0 {
-		return handleError(fmt.Errorf("missing required argument: files"))
+		return handleError(fmt.Errorf("missing required argument: files"), FormatText)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	result, err := gitAdd(repo, args.Files)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	return handleSuccess(result)
 }
@@ -392,15 +436,15 @@ func (gs *GitServer) handleGitReset(ctx context.Context, req *mcp.CallToolReques
 		RepoPath string `json:"repo_path"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	result, err := gitReset(repo)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	return handleSuccess(result)
 }
@@ -414,21 +458,22 @@ func (gs *GitServer) handleGitLog(ctx context.Context, req *mcp.CallToolRequest)
 		Format         string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	maxCount := 10
 	if args.MaxCount != nil {
 		maxCount = *args.MaxCount
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
 	result, err := gitLog(repo, maxCount, args.StartTimestamp, args.EndTimestamp)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
+	if format == FormatJSON {
 		return handleSuccess(formatLogJSON(result))
 	}
 	return handleSuccess(formatLogText(result))
@@ -441,18 +486,18 @@ func (gs *GitServer) handleGitCreateBranch(ctx context.Context, req *mcp.CallToo
 		BaseBranch string `json:"base_branch"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	if args.BranchName == "" {
-		return handleError(fmt.Errorf("missing required argument: branch_name"))
+		return handleError(fmt.Errorf("missing required argument: branch_name"), FormatText)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	result, err := gitCreateBranch(repo, args.BranchName, args.BaseBranch)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	return handleSuccess(result)
 }
@@ -463,44 +508,50 @@ func (gs *GitServer) handleGitCheckout(ctx context.Context, req *mcp.CallToolReq
 		BranchName string `json:"branch_name"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	if args.BranchName == "" {
-		return handleError(fmt.Errorf("missing required argument: branch_name"))
+		return handleError(fmt.Errorf("missing required argument: branch_name"), FormatText)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	result, err := gitCheckout(repo, args.BranchName)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
 	return handleSuccess(result)
 }
 
 func (gs *GitServer) handleGitShow(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath string `json:"repo_path"`
-		Revision string `json:"revision"`
-		Format   string `json:"format"`
+		RepoPath           string `json:"repo_path"`
+		Revision           string `json:"revision"`
+		Format             string `json:"format"`
+		IncludeDiffContent *bool  `json:"include_diff_content"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	if args.Revision == "" {
-		return handleError(fmt.Errorf("missing required argument: revision"))
+		return handleError(fmt.Errorf("missing required argument: revision"), format)
+	}
+	includeDiffContent := true
+	if args.IncludeDiffContent != nil {
+		includeDiffContent = *args.IncludeDiffContent
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
 	result, err := gitShow(repo, args.Revision)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
-		return handleSuccess(formatShowJSON(result))
+	if format == FormatJSON {
+		return handleSuccess(formatShowJSON(result, includeDiffContent))
 	}
 	return handleSuccess(formatShowText(result))
 }
@@ -514,20 +565,21 @@ func (gs *GitServer) handleGitBranch(ctx context.Context, req *mcp.CallToolReque
 		Format      string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-		return handleError(err)
+		return handleError(err, FormatText)
 	}
+	format := gs.resolveFormat(args.Format)
 	if args.BranchType == "" {
-		return handleError(fmt.Errorf("missing required argument: branch_type"))
+		return handleError(fmt.Errorf("missing required argument: branch_type"), format)
 	}
 	repo, err := gs.openRepo(args.RepoPath)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
 	result, err := gitBranch(repo, args.BranchType, args.Contains, args.NotContains)
 	if err != nil {
-		return handleError(err)
+		return handleError(err, format)
 	}
-	if gs.resolveFormat(args.Format) == FormatJSON {
+	if format == FormatJSON {
 		return handleSuccess(formatBranchJSON(result))
 	}
 	return handleSuccess(formatBranchText(result))
@@ -541,10 +593,16 @@ func handleSuccess(text string) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
-func handleError(err error) (*mcp.CallToolResult, error) {
+func handleError(err error, format string) (*mcp.CallToolResult, error) {
+	var text string
+	if format == FormatJSON {
+		text = formatErrorJSON(err)
+	} else {
+		text = fmt.Sprintf("Error: %v", err)
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Error: %v", err)},
+			&mcp.TextContent{Text: text},
 		},
 		IsError: true,
 	}, nil

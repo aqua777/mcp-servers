@@ -3,6 +3,8 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +14,50 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/format/diff"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+// computeAheadBehind calculates how many commits local is ahead/behind remote.
+func computeAheadBehind(repo *gogit.Repository, localHash, remoteHash plumbing.Hash) (ahead, behind int, err error) {
+	if localHash == remoteHash {
+		return 0, 0, nil
+	}
+
+	localCommit, err := repo.CommitObject(localHash)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolving local commit: %w", err)
+	}
+	remoteCommit, err := repo.CommitObject(remoteHash)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolving remote commit: %w", err)
+	}
+
+	localAncestors := make(map[plumbing.Hash]bool)
+	iter := object.NewCommitIterCTime(localCommit, nil, nil)
+	_ = iter.ForEach(func(c *object.Commit) error {
+		localAncestors[c.Hash] = true
+		return nil
+	})
+
+	remoteAncestors := make(map[plumbing.Hash]bool)
+	iter = object.NewCommitIterCTime(remoteCommit, nil, nil)
+	_ = iter.ForEach(func(c *object.Commit) error {
+		remoteAncestors[c.Hash] = true
+		return nil
+	})
+
+	for hash := range localAncestors {
+		if !remoteAncestors[hash] {
+			ahead++
+		}
+	}
+
+	for hash := range remoteAncestors {
+		if !localAncestors[hash] {
+			behind++
+		}
+	}
+
+	return ahead, behind, nil
+}
 
 // buildRefMap builds a map from commit hash to decorated ref names (like git log --decorate).
 func buildRefMap(repo *gogit.Repository) map[plumbing.Hash][]string {
@@ -109,7 +155,7 @@ func sortFileChanges(changes []FileChange) {
 }
 
 // patchToDiffResult converts a go-git Patch to a structured DiffResult.
-func patchToDiffResult(patch *object.Patch, base, target string, contextLines int) *DiffResult {
+func patchToDiffResult(patch *object.Patch, base, target string, contextLines, maxFiles int) *DiffResult {
 	result := &DiffResult{
 		Status:  "no_changes",
 		Base:    base,
@@ -156,6 +202,10 @@ func patchToDiffResult(patch *object.Patch, base, target string, contextLines in
 			df.Deletions = dels
 		}
 
+		if maxFiles > 0 && len(result.Files) >= maxFiles {
+			result.Truncated = true
+			break
+		}
 		result.Summary.TotalAdditions += df.Additions
 		result.Summary.TotalDeletions += df.Deletions
 		result.Files = append(result.Files, df)
@@ -231,6 +281,23 @@ func parseDiffChunks(chunks []diff.Chunk, contextLines int) ([]DiffChange, int, 
 				ctxBefore = nil
 			}
 			contextBuffer = nil
+		}
+	}
+
+	// Backward pass: populate context_after for additions and deletions
+	for i := 0; i < len(changes); i++ {
+		if changes[i].Type == "addition" || changes[i].Type == "deletion" {
+			var ctxAfter []string
+			for j := i + 1; j < len(changes) && len(ctxAfter) < contextLines; j++ {
+				if changes[j].Type == "context" {
+					ctxAfter = append(ctxAfter, changes[j].OldContent)
+				} else {
+					break
+				}
+			}
+			if len(ctxAfter) > 0 {
+				changes[i].ContextAfter = ctxAfter
+			}
 		}
 	}
 
@@ -318,10 +385,27 @@ func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 		if cfgErr == nil {
 			if branchCfg, ok := cfg.Branches[result.Repository.Branch]; ok && branchCfg.Remote != "" {
 				remoteBranch := branchCfg.Remote + "/" + branchCfg.Merge.Short()
-				result.Repository.Remote = &RemoteInfo{
-					Name:   branchCfg.Remote,
-					Branch: remoteBranch,
-					Status: "up_to_date",
+				remoteRef := plumbing.NewRemoteReferenceName(branchCfg.Remote, branchCfg.Merge.Short())
+				remoteRefObj, refErr := repo.Reference(remoteRef, true)
+				if refErr == nil {
+					ahead, behind, abErr := computeAheadBehind(repo, head.Hash(), remoteRefObj.Hash())
+					if abErr == nil {
+						status := "up_to_date"
+						if ahead > 0 && behind > 0 {
+							status = "diverged"
+						} else if ahead > 0 {
+							status = "ahead"
+						} else if behind > 0 {
+							status = "behind"
+						}
+						result.Repository.Remote = &RemoteInfo{
+							Name:     branchCfg.Remote,
+							Branch:   remoteBranch,
+							Status:   status,
+							AheadBy:  ahead,
+							BehindBy: behind,
+						}
+					}
 				}
 			}
 		}
@@ -344,9 +428,14 @@ func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 		}
 
 		if s.Worktree == gogit.Untracked {
+			fileType := "file"
+			if info, statErr := os.Stat(filepath.Join(wt.Filesystem.Root(), path)); statErr == nil && info.IsDir() {
+				fileType = "directory"
+			}
 			result.Changes.Untracked = append(result.Changes.Untracked, FileChange{
 				Path:   path,
 				Status: "untracked",
+				Type:   fileType,
 			})
 		} else if s.Worktree != gogit.Unmodified {
 			result.Changes.Unstaged = append(result.Changes.Unstaged, FileChange{
@@ -374,7 +463,7 @@ func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 }
 
 // gitDiffUnstaged shows changes in the working directory not yet staged.
-func gitDiffUnstaged(repo *gogit.Repository, contextLines int) (*DiffResult, error) {
+func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("getting worktree: %w", err)
@@ -431,6 +520,10 @@ func gitDiffUnstaged(repo *gogit.Repository, contextLines int) (*DiffResult, err
 
 			df := manualDiffToFile(path, oldContent, newContent, statusCodeToString(s.Worktree), contextLines)
 			if df != nil {
+				if maxFiles > 0 && len(result.Files) >= maxFiles {
+					result.Truncated = true
+					break
+				}
 				result.Files = append(result.Files, *df)
 				result.Summary.TotalAdditions += df.Additions
 				result.Summary.TotalDeletions += df.Deletions
@@ -451,7 +544,7 @@ func gitDiffUnstaged(repo *gogit.Repository, contextLines int) (*DiffResult, err
 }
 
 // gitDiffStaged shows changes that are staged for commit (index vs HEAD).
-func gitDiffStaged(repo *gogit.Repository, contextLines int) (*DiffResult, error) {
+func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
 	head, err := repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("getting HEAD: %w", err)
@@ -519,6 +612,10 @@ func gitDiffStaged(repo *gogit.Repository, contextLines int) (*DiffResult, error
 
 		df := manualDiffToFile(path, oldContent, newContent, statusCodeToString(s.Staging), contextLines)
 		if df != nil {
+			if maxFiles > 0 && len(result.Files) >= maxFiles {
+				result.Truncated = true
+				break
+			}
 			result.Files = append(result.Files, *df)
 			result.Summary.TotalAdditions += df.Additions
 			result.Summary.TotalDeletions += df.Deletions
@@ -538,7 +635,7 @@ func gitDiffStaged(repo *gogit.Repository, contextLines int) (*DiffResult, error
 }
 
 // gitDiff shows differences between the current HEAD and a target ref.
-func gitDiff(repo *gogit.Repository, target string, contextLines int) (*DiffResult, error) {
+func gitDiff(repo *gogit.Repository, target string, contextLines, maxFiles int) (*DiffResult, error) {
 	if err := validateRefName(target); err != nil {
 		return nil, err
 	}
@@ -566,7 +663,7 @@ func gitDiff(repo *gogit.Repository, target string, contextLines int) (*DiffResu
 		return nil, fmt.Errorf("computing diff: %w", err)
 	}
 
-	return patchToDiffResult(patch, target, "HEAD", contextLines), nil
+	return patchToDiffResult(patch, target, "HEAD", contextLines, maxFiles), nil
 }
 
 // gitCommit records staged changes to the repository.
@@ -770,7 +867,7 @@ func gitShow(repo *gogit.Repository, revision string) (*ShowResult, error) {
 
 	result := &ShowResult{
 		Commit: commitToInfo(commit, refMap),
-		Diff:   *patchToDiffResult(patch, "", "", DefaultContextLines),
+		Diff:   *patchToDiffResult(patch, "", "", DefaultContextLines, 0),
 	}
 	return result, nil
 }
@@ -796,8 +893,13 @@ func gitBranch(repo *gogit.Repository, branchType, contains, notContains string)
 
 	var currentBranch string
 	if head, err := repo.Head(); err == nil {
-		currentBranch = head.Name().Short()
-		result.CurrentBranch = currentBranch
+		if head.Name().IsBranch() {
+			currentBranch = head.Name().Short()
+			result.CurrentBranch = currentBranch
+		} else {
+			result.IsDetached = true
+			result.CurrentBranch = head.Hash().String()[:7]
+		}
 	}
 
 	err = refs.ForEach(func(ref *plumbing.Reference) error {

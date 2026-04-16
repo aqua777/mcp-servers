@@ -55,11 +55,19 @@ func formatLogJSON(r *LogResult) string {
 // formatBranchText renders a BranchResult in Git CLI format.
 func formatBranchText(r *BranchResult) string {
 	var sb strings.Builder
-	for i, br := range r.Branches {
-		if i > 0 {
+	if r.IsDetached {
+		sb.WriteString("* (HEAD detached at ")
+		sb.WriteString(r.CurrentBranch)
+		sb.WriteString(")")
+		if len(r.Branches) > 0 {
 			sb.WriteString("\n")
 		}
-		if br.IsCurrent {
+	}
+	for i, br := range r.Branches {
+		if i > 0 || r.IsDetached {
+			sb.WriteString("\n")
+		}
+		if br.IsCurrent && !r.IsDetached {
 			sb.WriteString("* ")
 		} else {
 			sb.WriteString("  ")
@@ -220,7 +228,18 @@ func formatDiffText(r *DiffResult) string {
 }
 
 // formatDiffJSON renders a DiffResult as JSON.
-func formatDiffJSON(r *DiffResult) string {
+func formatDiffJSON(r *DiffResult, includeDiffContent bool) string {
+	if !includeDiffContent {
+		// Create a copy with Changes stripped from each file
+		stripped := *r
+		stripped.Files = make([]DiffFile, len(r.Files))
+		for i, f := range r.Files {
+			stripped.Files[i] = f
+			stripped.Files[i].Changes = nil
+		}
+		b, _ := json.Marshal(&stripped)
+		return string(b)
+	}
 	b, _ := json.Marshal(r)
 	return string(b)
 }
@@ -264,7 +283,17 @@ func formatShowText(r *ShowResult) string {
 }
 
 // formatShowJSON renders a ShowResult as JSON.
-func formatShowJSON(r *ShowResult) string {
+func formatShowJSON(r *ShowResult, includeDiffContent bool) string {
+	if !includeDiffContent {
+		stripped := *r
+		stripped.Diff.Files = make([]DiffFile, len(r.Diff.Files))
+		for i, f := range r.Diff.Files {
+			stripped.Diff.Files[i] = f
+			stripped.Diff.Files[i].Changes = nil
+		}
+		b, _ := json.Marshal(&stripped)
+		return string(b)
+	}
 	b, _ := json.Marshal(r)
 	return string(b)
 }
