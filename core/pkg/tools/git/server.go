@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
-	gogit "github.com/go-git/go-git/v5"
 	"github.com/aqua777/mcp-servers/common"
 	"github.com/aqua777/mcp-servers/core/pkg/runtime"
+	gogit "github.com/go-git/go-git/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -47,6 +46,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 			"type": "object",
 			"properties": map[string]any{
 				"repo_path": map[string]any{"type": "string", "description": "Path to Git repository"},
+				"format":    map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -60,6 +60,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 			"properties": map[string]any{
 				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
 				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -73,6 +74,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 			"properties": map[string]any{
 				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
 				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -87,6 +89,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 				"repo_path":     map[string]any{"type": "string", "description": "Path to Git repository"},
 				"target":        map[string]any{"type": "string", "description": "Target branch or commit to compare with"},
 				"context_lines": map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
+				"format":        map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path", "target"},
 		},
@@ -144,6 +147,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 				"max_count":       map[string]any{"type": "integer", "description": "Maximum number of commits to show (default: 10)"},
 				"start_timestamp": map[string]any{"type": "string", "description": "Start timestamp for filtering commits (ISO 8601, relative dates like '2 weeks ago', or absolute dates)"},
 				"end_timestamp":   map[string]any{"type": "string", "description": "End timestamp for filtering commits (ISO 8601, relative dates, or absolute dates)"},
+				"format":          map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path"},
 		},
@@ -184,6 +188,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 			"properties": map[string]any{
 				"repo_path": map[string]any{"type": "string", "description": "Path to Git repository"},
 				"revision":  map[string]any{"type": "string", "description": "The revision (commit hash, branch name, tag) to show"},
+				"format":    map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path", "revision"},
 		},
@@ -199,6 +204,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 				"branch_type":  map[string]any{"type": "string", "enum": []string{"local", "remote", "all"}, "description": "Whether to list local branches ('local'), remote branches ('remote') or all branches ('all')"},
 				"contains":     map[string]any{"type": "string", "description": "Commit SHA that branch should contain"},
 				"not_contains": map[string]any{"type": "string", "description": "Commit SHA that branch should NOT contain"},
+				"format":       map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 			},
 			"required": []string{"repo_path", "branch_type"},
 		},
@@ -219,9 +225,21 @@ func (gs *GitServer) openRepo(repoPath string) (*gogit.Repository, error) {
 	return repo, nil
 }
 
+// resolveFormat returns the effective output format: per-call override > server default > text.
+func (gs *GitServer) resolveFormat(requestFormat string) string {
+	if requestFormat == FormatJSON || requestFormat == FormatText {
+		return requestFormat
+	}
+	if gs.options.OutputFormat == FormatJSON || gs.options.OutputFormat == FormatText {
+		return gs.options.OutputFormat
+	}
+	return FormatText
+}
+
 func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
 		RepoPath string `json:"repo_path"`
+		Format   string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -234,13 +252,17 @@ func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess("Repository status:\n" + result)
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatStatusJSON(result))
+	}
+	return handleSuccess(formatStatusText(result))
 }
 
 func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
 		RepoPath     string `json:"repo_path"`
 		ContextLines *int   `json:"context_lines"`
+		Format       string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -257,13 +279,17 @@ func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToo
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess("Unstaged changes:\n" + result)
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatDiffJSON(result))
+	}
+	return handleSuccess(formatDiffText(result))
 }
 
 func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
 		RepoPath     string `json:"repo_path"`
 		ContextLines *int   `json:"context_lines"`
+		Format       string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -280,7 +306,10 @@ func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolR
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess("Staged changes:\n" + result)
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatDiffJSON(result))
+	}
+	return handleSuccess(formatDiffText(result))
 }
 
 func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -288,6 +317,7 @@ func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest
 		RepoPath     string `json:"repo_path"`
 		Target       string `json:"target"`
 		ContextLines *int   `json:"context_lines"`
+		Format       string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -307,7 +337,10 @@ func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess(fmt.Sprintf("Diff with %s:\n%s", args.Target, result))
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatDiffJSON(result))
+	}
+	return handleSuccess(formatDiffText(result))
 }
 
 func (gs *GitServer) handleGitCommit(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -378,6 +411,7 @@ func (gs *GitServer) handleGitLog(ctx context.Context, req *mcp.CallToolRequest)
 		MaxCount       *int   `json:"max_count"`
 		StartTimestamp string `json:"start_timestamp"`
 		EndTimestamp   string `json:"end_timestamp"`
+		Format         string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -390,11 +424,14 @@ func (gs *GitServer) handleGitLog(ctx context.Context, req *mcp.CallToolRequest)
 	if err != nil {
 		return handleError(err)
 	}
-	entries, err := gitLog(repo, maxCount, args.StartTimestamp, args.EndTimestamp)
+	result, err := gitLog(repo, maxCount, args.StartTimestamp, args.EndTimestamp)
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess("Commit history:\n" + strings.Join(entries, "\n"))
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatLogJSON(result))
+	}
+	return handleSuccess(formatLogText(result))
 }
 
 func (gs *GitServer) handleGitCreateBranch(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -446,6 +483,7 @@ func (gs *GitServer) handleGitShow(ctx context.Context, req *mcp.CallToolRequest
 	var args struct {
 		RepoPath string `json:"repo_path"`
 		Revision string `json:"revision"`
+		Format   string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -461,7 +499,10 @@ func (gs *GitServer) handleGitShow(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess(result)
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatShowJSON(result))
+	}
+	return handleSuccess(formatShowText(result))
 }
 
 func (gs *GitServer) handleGitBranch(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -470,6 +511,7 @@ func (gs *GitServer) handleGitBranch(ctx context.Context, req *mcp.CallToolReque
 		BranchType  string `json:"branch_type"`
 		Contains    string `json:"contains"`
 		NotContains string `json:"not_contains"`
+		Format      string `json:"format"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err)
@@ -485,7 +527,10 @@ func (gs *GitServer) handleGitBranch(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return handleError(err)
 	}
-	return handleSuccess(result)
+	if gs.resolveFormat(args.Format) == FormatJSON {
+		return handleSuccess(formatBranchJSON(result))
+	}
+	return handleSuccess(formatBranchText(result))
 }
 
 func handleSuccess(text string) (*mcp.CallToolResult, error) {

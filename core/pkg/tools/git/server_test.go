@@ -3,6 +3,7 @@ package git
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,7 +164,7 @@ func (s *gitServerTestSuite) TestGitStatus_CleanRepo() {
 	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	s.Contains(text, "Repository status:")
+	s.Contains(text, "nothing to commit")
 }
 
 func (s *gitServerTestSuite) TestGitStatus_DirtyRepo() {
@@ -185,7 +186,7 @@ func (s *gitServerTestSuite) TestGitDiffUnstaged_Empty() {
 	result := s.callTool(ToolGitDiffUnstaged, map[string]any{"repo_path": s.repoDir})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	s.Contains(text, "Unstaged changes:")
+	s.Empty(text)
 }
 
 func (s *gitServerTestSuite) TestGitDiffUnstaged_WithChanges() {
@@ -208,7 +209,7 @@ func (s *gitServerTestSuite) TestGitDiffStaged_Empty() {
 	result := s.callTool(ToolGitDiffStaged, map[string]any{"repo_path": s.repoDir})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	s.Contains(text, "Staged changes:")
+	s.Empty(text)
 }
 
 func (s *gitServerTestSuite) TestGitDiffStaged_WithStagedFile() {
@@ -327,7 +328,7 @@ func (s *gitServerTestSuite) TestGitLog_Default() {
 	result := s.callTool(ToolGitLog, map[string]any{"repo_path": s.repoDir})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	s.Contains(text, "Commit history:")
+	s.Contains(text, "commit ")
 	s.Contains(text, "initial commit")
 }
 
@@ -341,8 +342,8 @@ func (s *gitServerTestSuite) TestGitLog_MaxCount() {
 	result := s.callTool(ToolGitLog, map[string]any{"repo_path": s.repoDir, "max_count": 2})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	// Should contain exactly 2 entries (each starts with Commit:)
-	count := strings.Count(text, "Commit:")
+	// Should contain exactly 2 entries (each has an Author: line)
+	count := strings.Count(text, "Author:")
 	s.Equal(2, count)
 }
 
@@ -464,7 +465,7 @@ func (s *gitServerTestSuite) TestGitShow_LatestCommit() {
 	})
 	s.False(result.IsError)
 	text := s.resultText(result)
-	s.Contains(text, "Commit:")
+	s.Contains(text, "commit ")
 	s.Contains(text, "Author:")
 	s.Contains(text, "initial commit")
 }
@@ -475,7 +476,7 @@ func (s *gitServerTestSuite) TestGitShow_HeadRevision() {
 		"revision":  "HEAD",
 	})
 	s.False(result.IsError)
-	s.Contains(s.resultText(result), "Commit:")
+	s.Contains(s.resultText(result), "commit ")
 }
 
 func (s *gitServerTestSuite) TestGitShow_SecondCommit() {
@@ -977,6 +978,490 @@ func (s *gitServerTestSuite) TestGitLog_RelativeStartTimestamp() {
 	})
 	s.False(result.IsError)
 	s.Contains(s.resultText(result), "initial commit")
+}
+
+// --- JSON output format ---
+
+func (s *gitServerTestSuite) TestGitStatus_JSONFormat() {
+	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(text), &parsed))
+	s.Equal(s.defaultBranch, parsed.Repository.Branch)
+	s.NotEmpty(parsed.Repository.HeadSHA)
+	s.Equal(0, parsed.Summary.TotalFiles)
+}
+
+func (s *gitServerTestSuite) TestGitStatus_JSONFormat_Dirty() {
+	s.writeFile("new_file.txt", "content")
+	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal(1, parsed.Summary.UntrackedCount)
+}
+
+func (s *gitServerTestSuite) TestGitLog_JSONFormat() {
+	result := s.callTool(ToolGitLog, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed LogResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Len(parsed.Commits, 1)
+	s.Equal("initial commit", parsed.Commits[0].Message)
+	s.NotEmpty(parsed.Commits[0].Author.Email)
+	s.NotEmpty(parsed.Commits[0].Refs)
+}
+
+func (s *gitServerTestSuite) TestGitShow_JSONFormat() {
+	result := s.callTool(ToolGitShow, map[string]any{"repo_path": s.repoDir, "revision": "HEAD", "format": "json"})
+	s.False(result.IsError)
+	var parsed ShowResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("initial commit", parsed.Commit.Message)
+	s.NotEmpty(parsed.Diff.Files)
+}
+
+func (s *gitServerTestSuite) TestGitBranch_JSONFormat() {
+	result := s.callTool(ToolGitBranch, map[string]any{"repo_path": s.repoDir, "branch_type": "local", "format": "json"})
+	s.False(result.IsError)
+	var parsed BranchResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal(s.defaultBranch, parsed.CurrentBranch)
+	s.Len(parsed.Branches, 1)
+	s.True(parsed.Branches[0].IsCurrent)
+	s.NotEmpty(parsed.Branches[0].LastCommitSHA)
+	s.NotEmpty(parsed.Branches[0].LastCommitDate)
+}
+
+func (s *gitServerTestSuite) TestGitDiffUnstaged_JSONFormat() {
+	s.writeFile("readme.txt", "modified content\n")
+	result := s.callTool(ToolGitDiffUnstaged, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("has_changes", parsed.Status)
+	s.NotEmpty(parsed.Files)
+	s.Greater(parsed.Summary.TotalAdditions+parsed.Summary.TotalDeletions, 0)
+}
+
+func (s *gitServerTestSuite) TestGitDiffStaged_JSONFormat() {
+	s.writeFile("staged.txt", "staged content\n")
+	s.stageFile("staged.txt")
+	result := s.callTool(ToolGitDiffStaged, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("has_changes", parsed.Status)
+	s.NotEmpty(parsed.Files)
+}
+
+func (s *gitServerTestSuite) TestGitDiff_JSONFormat() {
+	wt, err := s.repo.Worktree()
+	s.Require().NoError(err)
+	err = wt.Checkout(&gogit.CheckoutOptions{Branch: "refs/heads/json-feature", Create: true})
+	s.Require().NoError(err)
+	s.writeFile("json_feature.txt", "json feature\n")
+	s.stageFile("json_feature.txt")
+	s.commit("json feature commit")
+
+	result := s.callTool(ToolGitDiff, map[string]any{"repo_path": s.repoDir, "target": s.defaultBranch, "format": "json"})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("has_changes", parsed.Status)
+	s.Equal(s.defaultBranch, parsed.Base)
+	s.Equal("HEAD", parsed.Target)
+}
+
+func (s *gitServerTestSuite) TestGitDiffUnstaged_JSONFormat_Empty() {
+	result := s.callTool(ToolGitDiffUnstaged, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("no_changes", parsed.Status)
+	s.Empty(parsed.Files)
+}
+
+// --- resolveFormat ---
+
+func (s *gitServerTestSuite) TestResolveFormat_PerCallOverride() {
+	gs := &GitServer{options: Options{OutputFormat: FormatText}}
+	s.Equal(FormatJSON, gs.resolveFormat("json"))
+	s.Equal(FormatText, gs.resolveFormat("text"))
+}
+
+func (s *gitServerTestSuite) TestResolveFormat_ServerDefault() {
+	gs := &GitServer{options: Options{OutputFormat: FormatJSON}}
+	s.Equal(FormatJSON, gs.resolveFormat(""))
+	s.Equal(FormatJSON, gs.resolveFormat("bogus"))
+}
+
+func (s *gitServerTestSuite) TestResolveFormat_DefaultsToText() {
+	gs := &GitServer{options: Options{}}
+	s.Equal(FormatText, gs.resolveFormat(""))
+}
+
+func (s *gitServerTestSuite) TestResolveFormat_ServerDefaultText() {
+	gs := &GitServer{options: Options{OutputFormat: FormatText}}
+	s.Equal(FormatText, gs.resolveFormat(""))
+}
+
+// --- formatter unit tests ---
+
+func (s *gitServerTestSuite) TestFormatLogText_Empty() {
+	result := formatLogText(&LogResult{Commits: []CommitInfo{}})
+	s.Empty(result)
+}
+
+func (s *gitServerTestSuite) TestFormatLogText_MergeCommit() {
+	result := formatLogText(&LogResult{Commits: []CommitInfo{
+		{
+			SHA:     "abc123",
+			Author:  AuthorInfo{Name: "Test", Email: "t@t.com"},
+			Date:    "2024-01-01T00:00:00Z",
+			Message: "merge",
+			Parents: []string{"parent1abcdef0123456789abcdef0123456789ab", "parent2"},
+			Refs:    []string{},
+		},
+	}})
+	s.Contains(result, "Merge: parent1 parent2")
+}
+
+func (s *gitServerTestSuite) TestFormatBranchText_Mixed() {
+	result := formatBranchText(&BranchResult{
+		CurrentBranch: "main",
+		Branches: []BranchInfo{
+			{Name: "feature", IsCurrent: false},
+			{Name: "main", IsCurrent: true},
+		},
+	})
+	s.Contains(result, "* main")
+	s.Contains(result, "  feature")
+}
+
+func (s *gitServerTestSuite) TestFormatStatusText_WithRemote() {
+	result := formatStatusText(&StatusResult{
+		Repository: RepositoryInfo{
+			Branch:  "main",
+			HeadSHA: "abc",
+			Remote: &RemoteInfo{
+				Name:    "origin",
+				Branch:  "origin/main",
+				Status:  "ahead",
+				AheadBy: 2,
+			},
+		},
+		Changes: StatusChanges{
+			Staged:    []FileChange{{Path: "file.go", Status: "added"}},
+			Unstaged:  []FileChange{{Path: "other.go", Status: "modified"}},
+			Untracked: []FileChange{{Path: "new.txt", Status: "untracked"}},
+			Conflicts: []FileChange{{Path: "conflict.go", Status: "conflict"}},
+		},
+		Summary: StatusSummary{TotalFiles: 4, StagedCount: 1, UnstagedCount: 1, UntrackedCount: 1, ConflictedCount: 1},
+	})
+	s.Contains(result, "Your branch is ahead")
+	s.Contains(result, "Changes to be committed:")
+	s.Contains(result, "new file:   file.go")
+	s.Contains(result, "Changes not staged for commit:")
+	s.Contains(result, "modified:   other.go")
+	s.Contains(result, "Untracked files:")
+	s.Contains(result, "new.txt")
+	s.Contains(result, "Unmerged paths:")
+	s.Contains(result, "conflict.go")
+}
+
+func (s *gitServerTestSuite) TestFormatStatusText_RemoteBehind() {
+	result := formatStatusText(&StatusResult{
+		Repository: RepositoryInfo{
+			Branch: "main",
+			Remote: &RemoteInfo{Branch: "origin/main", Status: "behind", BehindBy: 3},
+		},
+		Changes: StatusChanges{Staged: []FileChange{}, Unstaged: []FileChange{}, Untracked: []FileChange{}, Conflicts: []FileChange{}},
+	})
+	s.Contains(result, "Your branch is behind")
+}
+
+func (s *gitServerTestSuite) TestFormatStatusText_RemoteDiverged() {
+	result := formatStatusText(&StatusResult{
+		Repository: RepositoryInfo{
+			Branch: "main",
+			Remote: &RemoteInfo{Branch: "origin/main", Status: "diverged"},
+		},
+		Changes: StatusChanges{Staged: []FileChange{}, Unstaged: []FileChange{}, Untracked: []FileChange{}, Conflicts: []FileChange{}},
+	})
+	s.Contains(result, "have diverged")
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_NoChanges() {
+	result := formatDiffText(&DiffResult{Status: "no_changes"})
+	s.Empty(result)
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_UsesRawText() {
+	result := formatDiffText(&DiffResult{RawText: "raw diff output", Status: "has_changes"})
+	s.Equal("raw diff output", result)
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_RendersFromStruct() {
+	result := formatDiffText(&DiffResult{
+		Status: "has_changes",
+		Files: []DiffFile{{
+			Path:   "file.go",
+			Status: "modified",
+			Changes: []DiffChange{
+				{Type: "hunk_header", NewContent: "@@ -1,3 +1,3 @@"},
+				{Type: "context", OldContent: "unchanged"},
+				{Type: "deletion", OldContent: "old line"},
+				{Type: "addition", NewContent: "new line"},
+			},
+		}},
+	})
+	s.Contains(result, "diff --git a/file.go b/file.go")
+	s.Contains(result, "--- a/file.go")
+	s.Contains(result, "+++ b/file.go")
+	s.Contains(result, " unchanged")
+	s.Contains(result, "-old line")
+	s.Contains(result, "+new line")
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_AddedFile() {
+	result := formatDiffText(&DiffResult{
+		Status: "has_changes",
+		Files: []DiffFile{{
+			Path:    "new.go",
+			Status:  "added",
+			Changes: []DiffChange{{Type: "addition", NewContent: "package main"}},
+		}},
+	})
+	s.Contains(result, "new file mode")
+	s.Contains(result, "--- /dev/null")
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_DeletedFile() {
+	result := formatDiffText(&DiffResult{
+		Status: "has_changes",
+		Files: []DiffFile{{
+			Path:    "old.go",
+			Status:  "deleted",
+			Changes: []DiffChange{{Type: "deletion", OldContent: "package main"}},
+		}},
+	})
+	s.Contains(result, "deleted file mode")
+	s.Contains(result, "+++ /dev/null")
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_BinaryFile() {
+	result := formatDiffText(&DiffResult{
+		Status: "has_changes",
+		Files: []DiffFile{{
+			Path:   "image.png",
+			Status: "modified",
+			Binary: true,
+		}},
+	})
+	s.Contains(result, "Binary files")
+}
+
+func (s *gitServerTestSuite) TestFormatDiffText_RenamedFile() {
+	result := formatDiffText(&DiffResult{
+		Status: "has_changes",
+		Files: []DiffFile{{
+			Path:    "new_name.go",
+			OldPath: "old_name.go",
+			Status:  "renamed",
+			Changes: []DiffChange{},
+		}},
+	})
+	s.Contains(result, "diff --git a/old_name.go b/new_name.go")
+}
+
+func (s *gitServerTestSuite) TestFormatShowText_MergeCommit() {
+	result := formatShowText(&ShowResult{
+		Commit: CommitInfo{
+			SHA:     "abc123",
+			Author:  AuthorInfo{Name: "Test", Email: "t@t.com"},
+			Date:    "2024-01-01T00:00:00Z",
+			Message: "merge commit",
+			Parents: []string{"parent1abcdef0123456789abcdef0123456789ab", "short"},
+			Refs:    []string{"HEAD -> main"},
+		},
+		Diff: DiffResult{Status: "no_changes"},
+	})
+	s.Contains(result, "commit abc123 (HEAD -> main)")
+	s.Contains(result, "Merge: parent1 short")
+}
+
+func (s *gitServerTestSuite) TestFormatErrorJSON() {
+	result := formatErrorJSON(fmt.Errorf("something broke"))
+	s.Contains(result, "something broke")
+	s.Contains(result, "\"code\":\"error\"")
+}
+
+func (s *gitServerTestSuite) TestStatusCodeToText_AllBranches() {
+	s.Equal("new file:   ", statusCodeToText("added"))
+	s.Equal("modified:   ", statusCodeToText("modified"))
+	s.Equal("deleted:    ", statusCodeToText("deleted"))
+	s.Equal("renamed:    ", statusCodeToText("renamed"))
+	s.Equal("copied:     ", statusCodeToText("copied"))
+	s.Equal("unknown: ", statusCodeToText("unknown"))
+}
+
+// --- helper function unit tests ---
+
+func (s *gitServerTestSuite) TestSplitChunkLines_Empty() {
+	s.Nil(splitChunkLines(""))
+}
+
+func (s *gitServerTestSuite) TestSplitChunkLines_WithTrailingNewline() {
+	result := splitChunkLines("a\nb\n")
+	s.Equal([]string{"a", "b"}, result)
+}
+
+func (s *gitServerTestSuite) TestSplitChunkLines_NoTrailingNewline() {
+	result := splitChunkLines("a\nb")
+	s.Equal([]string{"a", "b"}, result)
+}
+
+func (s *gitServerTestSuite) TestManualDiffToFile_SameContent() {
+	result := manualDiffToFile("file.go", "same", "same", "modified", 3)
+	s.Nil(result)
+}
+
+func (s *gitServerTestSuite) TestManualDiffToFile_WithChanges() {
+	result := manualDiffToFile("file.go", "old\n", "new\n", "modified", 3)
+	s.NotNil(result)
+	s.Equal("file.go", result.Path)
+	s.Greater(result.Additions, 0)
+	s.Greater(result.Deletions, 0)
+}
+
+func (s *gitServerTestSuite) TestStatusCodeToString_AllCodes() {
+	s.Equal("added", statusCodeToString(gogit.Added))
+	s.Equal("modified", statusCodeToString(gogit.Modified))
+	s.Equal("deleted", statusCodeToString(gogit.Deleted))
+	s.Equal("renamed", statusCodeToString(gogit.Renamed))
+	s.Equal("copied", statusCodeToString(gogit.Copied))
+	s.Equal("modified", statusCodeToString(gogit.UpdatedButUnmerged))
+}
+
+// --- server default format ---
+
+func (s *gitServerTestSuite) TestGitLog_ServerDefaultJSON() {
+	// Create a server with JSON as default
+	srv, err := NewServer(context.Background(), Options{OutputFormat: FormatJSON})
+	s.Require().NoError(err)
+	gsJSON := &GitServer{server: srv, options: Options{OutputFormat: FormatJSON}}
+
+	argsBytes, _ := json.Marshal(map[string]any{"repo_path": s.repoDir})
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: ToolGitLog, Arguments: argsBytes}}
+	result, err := gsJSON.handleGitLog(context.Background(), req)
+	s.Require().NoError(err)
+	text := result.Content[0].(*mcp.TextContent).Text
+	var parsed LogResult
+	s.NoError(json.Unmarshal([]byte(text), &parsed))
+	s.NotEmpty(parsed.Commits)
+}
+
+func (s *gitServerTestSuite) TestGitStatus_ServerDefaultJSON_PerCallOverrideText() {
+	srv, err := NewServer(context.Background(), Options{OutputFormat: FormatJSON})
+	s.Require().NoError(err)
+	gsJSON := &GitServer{server: srv, options: Options{OutputFormat: FormatJSON}}
+
+	argsBytes, _ := json.Marshal(map[string]any{"repo_path": s.repoDir, "format": "text"})
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: ToolGitStatus, Arguments: argsBytes}}
+	result, err := gsJSON.handleGitStatus(context.Background(), req)
+	s.Require().NoError(err)
+	text := result.Content[0].(*mcp.TextContent).Text
+	s.Contains(text, "On branch")
+}
+
+// --- git_show with second commit for parent diff coverage ---
+
+func (s *gitServerTestSuite) TestGitShow_SecondCommit_JSON() {
+	s.writeFile("second.txt", "second file\n")
+	s.stageFile("second.txt")
+	hash := s.commit("second commit")
+	result := s.callTool(ToolGitShow, map[string]any{"repo_path": s.repoDir, "revision": hash, "format": "json"})
+	s.False(result.IsError)
+	var parsed ShowResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.Equal("second commit", parsed.Commit.Message)
+	s.NotEmpty(parsed.Commit.Parents)
+}
+
+// --- git_status with staged file for full coverage ---
+
+func (s *gitServerTestSuite) TestGitStatus_StagedFile() {
+	s.writeFile("staged.txt", "content")
+	s.stageFile("staged.txt")
+	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "Changes to be committed")
+	s.Contains(text, "staged.txt")
+}
+
+func (s *gitServerTestSuite) TestGitStatus_ModifiedFile() {
+	s.writeFile("readme.txt", "changed content")
+	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "Changes not staged for commit")
+	s.Contains(text, "readme.txt")
+}
+
+func (s *gitServerTestSuite) TestSortFileChanges() {
+	changes := []FileChange{
+		{Path: "z.go", Status: "modified"},
+		{Path: "a.go", Status: "added"},
+		{Path: "m.go", Status: "deleted"},
+	}
+	sortFileChanges(changes)
+	s.Equal("a.go", changes[0].Path)
+	s.Equal("m.go", changes[1].Path)
+	s.Equal("z.go", changes[2].Path)
+}
+
+func (s *gitServerTestSuite) TestFormatStatusText_RemoteUpToDate() {
+	result := formatStatusText(&StatusResult{
+		Repository: RepositoryInfo{
+			Branch: "main",
+			Remote: &RemoteInfo{Branch: "origin/main", Status: "up_to_date"},
+		},
+		Changes: StatusChanges{},
+	})
+	s.Contains(result, "up to date")
+}
+
+func (s *gitServerTestSuite) TestGitDiffUnstaged_DeletedFile() {
+	// Deleted worktree files can't be opened, so gitDiffUnstaged skips them.
+	// This exercises the wt.Filesystem.Open error path (continue on line 422).
+	os.Remove(filepath.Join(s.repoDir, "readme.txt"))
+	result := s.callTool(ToolGitDiffUnstaged, map[string]any{"repo_path": s.repoDir})
+	s.False(result.IsError)
+}
+
+func (s *gitServerTestSuite) TestGitDiffStaged_DeletedFile() {
+	wt, err := s.repo.Worktree()
+	s.Require().NoError(err)
+	os.Remove(filepath.Join(s.repoDir, "readme.txt"))
+	_, err = wt.Add("readme.txt")
+	s.Require().NoError(err)
+	result := s.callTool(ToolGitDiffStaged, map[string]any{"repo_path": s.repoDir})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "readme.txt")
+}
+
+func (s *gitServerTestSuite) TestGitShow_InitialCommit_JSON_DiffFiles() {
+	result := s.callTool(ToolGitShow, map[string]any{"repo_path": s.repoDir, "revision": "HEAD", "format": "json"})
+	s.False(result.IsError)
+	var parsed ShowResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+	s.NotEmpty(parsed.Diff.Files)
+	s.Equal("added", parsed.Diff.Files[0].Status)
+	s.Greater(parsed.Diff.Summary.TotalAdditions, 0)
 }
 
 func TestGitServerSuite(t *testing.T) {

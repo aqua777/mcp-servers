@@ -13,9 +13,11 @@ import (
 
 func runGitServer(args []string) error {
 	repository := krait.GetString("app.repository")
+	outputFormat := krait.GetString("app.output")
 
 	opts := gittools.Options{
 		AllowedRepository: repository,
+		OutputFormat:      outputFormat,
 	}
 
 	ctx := context.Background()
@@ -28,6 +30,7 @@ func runGitServer(args []string) error {
 func main() {
 	app := krait.App(common.MCP_Git, "Git MCP Server", "An MCP server that provides tools to read, search, and manipulate Git repositories.").
 		WithStringP("app.repository", "Restrict operations to a specific repository path", "repository", "r", "GIT_REPOSITORY", "").
+		WithStringP("app.output", "Default output format: text or json", "output", "o", "GIT_OUTPUT_FORMAT", "text").
 		WithRun(runGitServer)
 
 	if err := app.Execute(); err != nil {
