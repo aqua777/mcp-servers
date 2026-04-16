@@ -3,6 +3,8 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -13,46 +15,487 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// gitStatus returns the working tree status formatted like `git status`.
-func gitStatus(repo *gogit.Repository) (string, error) {
+// computeAheadBehind calculates how many commits local is ahead/behind remote.
+func computeAheadBehind(repo *gogit.Repository, localHash, remoteHash plumbing.Hash) (ahead, behind int, err error) {
+	if localHash == remoteHash {
+		return 0, 0, nil
+	}
+
+	localCommit, err := repo.CommitObject(localHash)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolving local commit: %w", err)
+	}
+	remoteCommit, err := repo.CommitObject(remoteHash)
+	if err != nil {
+		return 0, 0, fmt.Errorf("resolving remote commit: %w", err)
+	}
+
+	localAncestors := make(map[plumbing.Hash]bool)
+	iter := object.NewCommitIterCTime(localCommit, nil, nil)
+	_ = iter.ForEach(func(c *object.Commit) error {
+		localAncestors[c.Hash] = true
+		return nil
+	})
+
+	remoteAncestors := make(map[plumbing.Hash]bool)
+	iter = object.NewCommitIterCTime(remoteCommit, nil, nil)
+	_ = iter.ForEach(func(c *object.Commit) error {
+		remoteAncestors[c.Hash] = true
+		return nil
+	})
+
+	for hash := range localAncestors {
+		if !remoteAncestors[hash] {
+			ahead++
+		}
+	}
+
+	for hash := range remoteAncestors {
+		if !localAncestors[hash] {
+			behind++
+		}
+	}
+
+	return ahead, behind, nil
+}
+
+// buildRefMap builds a map from commit hash to decorated ref names (like git log --decorate).
+func buildRefMap(repo *gogit.Repository) map[plumbing.Hash][]string {
+	refMap := map[plumbing.Hash][]string{}
+	refs, err := repo.References()
+	if err != nil {
+		return refMap
+	}
+	defer refs.Close()
+
+	head, _ := repo.Head()
+	var headHash plumbing.Hash
+	var headBranch string
+	if head != nil {
+		headHash = head.Hash()
+		headBranch = head.Name().Short()
+	}
+
+	_ = refs.ForEach(func(ref *plumbing.Reference) error {
+		name := ref.Name()
+		if !name.IsBranch() && !name.IsRemote() && !name.IsTag() {
+			return nil
+		}
+		short := name.Short()
+		if name.IsTag() {
+			short = "tag: " + short
+		}
+		refMap[ref.Hash()] = append(refMap[ref.Hash()], short)
+		return nil
+	})
+
+	if head != nil {
+		existing := refMap[headHash]
+		var filtered []string
+		for _, r := range existing {
+			if r != headBranch {
+				filtered = append(filtered, r)
+			}
+		}
+		refMap[headHash] = append([]string{"HEAD -> " + headBranch}, filtered...)
+	}
+
+	return refMap
+}
+
+// commitToInfo converts a go-git Commit to a CommitInfo struct.
+func commitToInfo(c *object.Commit, refMap map[plumbing.Hash][]string) CommitInfo {
+	var parents []string
+	for _, p := range c.ParentHashes {
+		parents = append(parents, p.String())
+	}
+	refs := refMap[c.Hash]
+	if refs == nil {
+		refs = []string{}
+	}
+	if parents == nil {
+		parents = []string{}
+	}
+	return CommitInfo{
+		SHA: c.Hash.String(),
+		Author: AuthorInfo{
+			Name:  c.Author.Name,
+			Email: c.Author.Email,
+		},
+		Date:    c.Author.When.Format(time.RFC3339),
+		Message: strings.TrimRight(c.Message, "\n"),
+		Refs:    refs,
+		Parents: parents,
+	}
+}
+
+// statusCodeToString maps go-git StatusCode to a human-readable status string.
+func statusCodeToString(code gogit.StatusCode) string {
+	switch code {
+	case gogit.Added:
+		return "added"
+	case gogit.Modified:
+		return "modified"
+	case gogit.Deleted:
+		return "deleted"
+	case gogit.Renamed:
+		return "renamed"
+	case gogit.Copied:
+		return "copied"
+	default:
+		return "modified"
+	}
+}
+
+// sortFileChanges sorts a slice of FileChange by path.
+func sortFileChanges(changes []FileChange) {
+	sort.Slice(changes, func(i, j int) bool {
+		return changes[i].Path < changes[j].Path
+	})
+}
+
+// patchToDiffResult converts a go-git Patch to a structured DiffResult.
+func patchToDiffResult(patch *object.Patch, base, target string, contextLines, maxFiles int) *DiffResult {
+	result := &DiffResult{
+		Status:  "no_changes",
+		Base:    base,
+		Target:  target,
+		Files:   []DiffFile{},
+		Summary: DiffSummary{},
+		RawText: encodePatch(patch, contextLines),
+	}
+
+	fps := patch.FilePatches()
+	if len(fps) == 0 {
+		return result
+	}
+
+	result.Status = "has_changes"
+	for _, fp := range fps {
+		from, to := fp.Files()
+		df := DiffFile{
+			Changes: []DiffChange{},
+		}
+
+		if from == nil && to != nil {
+			df.Path = to.Path()
+			df.Status = "added"
+		} else if from != nil && to == nil {
+			df.Path = from.Path()
+			df.Status = "deleted"
+		} else if from != nil && to != nil {
+			df.Path = to.Path()
+			if from.Path() != to.Path() {
+				df.OldPath = from.Path()
+				df.Status = "renamed"
+			} else {
+				df.Status = "modified"
+			}
+		}
+
+		df.Binary = fp.IsBinary()
+
+		if !fp.IsBinary() {
+			changes, adds, dels := parseDiffChunks(fp.Chunks(), contextLines)
+			df.Changes = changes
+			df.Additions = adds
+			df.Deletions = dels
+		}
+
+		if maxFiles > 0 && len(result.Files) >= maxFiles {
+			result.Truncated = true
+			break
+		}
+		result.Summary.TotalAdditions += df.Additions
+		result.Summary.TotalDeletions += df.Deletions
+		result.Files = append(result.Files, df)
+	}
+	result.Summary.TotalFiles = len(result.Files)
+
+	return result
+}
+
+// parseDiffChunks processes diff chunks into structured DiffChange entries.
+func parseDiffChunks(chunks []diff.Chunk, contextLines int) ([]DiffChange, int, int) {
+	var changes []DiffChange
+	var additions, deletions int
+	oldLine := 1
+	newLine := 1
+
+	var contextBuffer []string
+
+	for _, chunk := range chunks {
+		lines := splitChunkLines(chunk.Content())
+
+		switch chunk.Type() {
+		case diff.Equal:
+			for _, line := range lines {
+				contextBuffer = append(contextBuffer, line)
+				if len(contextBuffer) > contextLines {
+					contextBuffer = contextBuffer[1:]
+				}
+				changes = append(changes, DiffChange{
+					Type:       "context",
+					OldLine:    oldLine,
+					NewLine:    newLine,
+					OldContent: line,
+				})
+				oldLine++
+				newLine++
+			}
+		case diff.Delete:
+			var ctxBefore []string
+			if len(contextBuffer) > 0 {
+				ctxBefore = make([]string, len(contextBuffer))
+				copy(ctxBefore, contextBuffer)
+			}
+			for _, line := range lines {
+				ch := DiffChange{
+					Type:          "deletion",
+					OldLine:       oldLine,
+					OldContent:    line,
+					ContextBefore: ctxBefore,
+				}
+				changes = append(changes, ch)
+				deletions++
+				oldLine++
+				ctxBefore = nil
+			}
+			contextBuffer = nil
+		case diff.Add:
+			var ctxBefore []string
+			if len(contextBuffer) > 0 {
+				ctxBefore = make([]string, len(contextBuffer))
+				copy(ctxBefore, contextBuffer)
+			}
+			for _, line := range lines {
+				ch := DiffChange{
+					Type:          "addition",
+					NewLine:       newLine,
+					NewContent:    line,
+					ContextBefore: ctxBefore,
+				}
+				changes = append(changes, ch)
+				additions++
+				newLine++
+				ctxBefore = nil
+			}
+			contextBuffer = nil
+		}
+	}
+
+	// Backward pass: populate context_after for additions and deletions
+	for i := 0; i < len(changes); i++ {
+		if changes[i].Type == "addition" || changes[i].Type == "deletion" {
+			var ctxAfter []string
+			for j := i + 1; j < len(changes) && len(ctxAfter) < contextLines; j++ {
+				if changes[j].Type == "context" {
+					ctxAfter = append(ctxAfter, changes[j].OldContent)
+				} else {
+					break
+				}
+			}
+			if len(ctxAfter) > 0 {
+				changes[i].ContextAfter = ctxAfter
+			}
+		}
+	}
+
+	return changes, additions, deletions
+}
+
+// splitChunkLines splits chunk content into lines, removing a trailing empty line from the split.
+func splitChunkLines(content string) []string {
+	if content == "" {
+		return nil
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
+}
+
+// manualDiffToFile produces a DiffFile from old/new content using the simple all-delete/all-add approach.
+func manualDiffToFile(path, oldContent, newContent, status string, contextLines int) *DiffFile {
+	if oldContent == newContent {
+		return nil
+	}
+
+	oldLines := strings.Split(oldContent, "\n")
+	newLines := strings.Split(newContent, "\n")
+
+	df := &DiffFile{
+		Path:    path,
+		Status:  status,
+		Changes: []DiffChange{},
+	}
+
+	df.Changes = append(df.Changes, DiffChange{
+		Type:       "hunk_header",
+		NewContent: fmt.Sprintf("@@ -1,%d +1,%d @@", len(oldLines), len(newLines)),
+	})
+
+	for i, l := range oldLines {
+		df.Changes = append(df.Changes, DiffChange{
+			Type:       "deletion",
+			OldLine:    i + 1,
+			OldContent: l,
+		})
+		df.Deletions++
+	}
+	for i, l := range newLines {
+		df.Changes = append(df.Changes, DiffChange{
+			Type:       "addition",
+			NewLine:    i + 1,
+			NewContent: l,
+		})
+		df.Additions++
+	}
+
+	return df
+}
+
+// gitStatus returns the working tree status as a structured StatusResult.
+func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("getting worktree: %w", err)
+		return nil, fmt.Errorf("getting worktree: %w", err)
 	}
 	status, err := wt.Status()
 	if err != nil {
-		return "", fmt.Errorf("getting status: %w", err)
+		return nil, fmt.Errorf("getting status: %w", err)
 	}
-	return status.String(), nil
+
+	result := &StatusResult{
+		Changes: StatusChanges{
+			Staged:    []FileChange{},
+			Unstaged:  []FileChange{},
+			Untracked: []FileChange{},
+			Conflicts: []FileChange{},
+		},
+	}
+
+	head, err := repo.Head()
+	if err == nil {
+		result.Repository.Branch = head.Name().Short()
+		result.Repository.HeadSHA = head.Hash().String()
+
+		cfg, cfgErr := repo.Config()
+		if cfgErr == nil {
+			if branchCfg, ok := cfg.Branches[result.Repository.Branch]; ok && branchCfg.Remote != "" {
+				remoteBranch := branchCfg.Remote + "/" + branchCfg.Merge.Short()
+				remoteRef := plumbing.NewRemoteReferenceName(branchCfg.Remote, branchCfg.Merge.Short())
+				remoteRefObj, refErr := repo.Reference(remoteRef, true)
+				if refErr == nil {
+					ahead, behind, abErr := computeAheadBehind(repo, head.Hash(), remoteRefObj.Hash())
+					if abErr == nil {
+						status := "up_to_date"
+						if ahead > 0 && behind > 0 {
+							status = "diverged"
+						} else if ahead > 0 {
+							status = "ahead"
+						} else if behind > 0 {
+							status = "behind"
+						}
+						result.Repository.Remote = &RemoteInfo{
+							Name:     branchCfg.Remote,
+							Branch:   remoteBranch,
+							Status:   status,
+							AheadBy:  ahead,
+							BehindBy: behind,
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for path, s := range status {
+		if s.Staging == gogit.UpdatedButUnmerged || s.Worktree == gogit.UpdatedButUnmerged {
+			result.Changes.Conflicts = append(result.Changes.Conflicts, FileChange{
+				Path:   path,
+				Status: "conflict",
+			})
+			continue
+		}
+
+		if s.Staging != gogit.Unmodified && s.Staging != gogit.Untracked {
+			result.Changes.Staged = append(result.Changes.Staged, FileChange{
+				Path:   path,
+				Status: statusCodeToString(s.Staging),
+			})
+		}
+
+		if s.Worktree == gogit.Untracked {
+			fileType := "file"
+			if info, statErr := os.Stat(filepath.Join(wt.Filesystem.Root(), path)); statErr == nil && info.IsDir() {
+				fileType = "directory"
+			}
+			result.Changes.Untracked = append(result.Changes.Untracked, FileChange{
+				Path:   path,
+				Status: "untracked",
+				Type:   fileType,
+			})
+		} else if s.Worktree != gogit.Unmodified {
+			result.Changes.Unstaged = append(result.Changes.Unstaged, FileChange{
+				Path:   path,
+				Status: statusCodeToString(s.Worktree),
+			})
+		}
+	}
+
+	sortFileChanges(result.Changes.Staged)
+	sortFileChanges(result.Changes.Unstaged)
+	sortFileChanges(result.Changes.Untracked)
+	sortFileChanges(result.Changes.Conflicts)
+
+	result.Summary = StatusSummary{
+		StagedCount:     len(result.Changes.Staged),
+		UnstagedCount:   len(result.Changes.Unstaged),
+		UntrackedCount:  len(result.Changes.Untracked),
+		ConflictedCount: len(result.Changes.Conflicts),
+	}
+	result.Summary.TotalFiles = result.Summary.StagedCount + result.Summary.UnstagedCount +
+		result.Summary.UntrackedCount + result.Summary.ConflictedCount
+
+	return result, nil
 }
 
 // gitDiffUnstaged shows changes in the working directory not yet staged.
-func gitDiffUnstaged(repo *gogit.Repository, contextLines int) (string, error) {
+func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("getting worktree: %w", err)
+		return nil, fmt.Errorf("getting worktree: %w", err)
 	}
 
 	head, err := repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD: %w", err)
+		return nil, fmt.Errorf("getting HEAD: %w", err)
 	}
 	headCommit, err := repo.CommitObject(head.Hash())
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD commit: %w", err)
+		return nil, fmt.Errorf("getting HEAD commit: %w", err)
 	}
 	headTree, err := headCommit.Tree()
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD tree: %w", err)
+		return nil, fmt.Errorf("getting HEAD tree: %w", err)
 	}
 
 	status, err := wt.Status()
 	if err != nil {
-		return "", fmt.Errorf("getting status: %w", err)
+		return nil, fmt.Errorf("getting status: %w", err)
 	}
 
-	// Use status to identify worktree-modified files, then produce a simple diff
-	var sb strings.Builder
+	result := &DiffResult{
+		Status:  "no_changes",
+		Base:    "HEAD",
+		Target:  "working tree",
+		Files:   []DiffFile{},
+		Summary: DiffSummary{},
+	}
+
+	var rawSB strings.Builder
 	for path, s := range status {
 		if s.Worktree != gogit.Unmodified && s.Worktree != gogit.Untracked {
 			file, err := headTree.File(path)
@@ -72,37 +515,67 @@ func gitDiffUnstaged(repo *gogit.Repository, contextLines int) (string, error) {
 			_, _ = newBuf.ReadFrom(worktreeFile)
 			worktreeFile.Close()
 			newContent := newBuf.String()
-			sb.WriteString(unifiedDiff("a/"+path, "b/"+path, oldContent, newContent, contextLines))
+
+			rawSB.WriteString(unifiedDiff("a/"+path, "b/"+path, oldContent, newContent, contextLines))
+
+			df := manualDiffToFile(path, oldContent, newContent, statusCodeToString(s.Worktree), contextLines)
+			if df != nil {
+				if maxFiles > 0 && len(result.Files) >= maxFiles {
+					result.Truncated = true
+					break
+				}
+				result.Files = append(result.Files, *df)
+				result.Summary.TotalAdditions += df.Additions
+				result.Summary.TotalDeletions += df.Deletions
+			}
 		}
 	}
-	return sb.String(), nil
+
+	if len(result.Files) > 0 {
+		result.Status = "has_changes"
+		result.Summary.TotalFiles = len(result.Files)
+		result.RawText = rawSB.String()
+		sort.Slice(result.Files, func(i, j int) bool {
+			return result.Files[i].Path < result.Files[j].Path
+		})
+	}
+
+	return result, nil
 }
 
 // gitDiffStaged shows changes that are staged for commit (index vs HEAD).
-func gitDiffStaged(repo *gogit.Repository, contextLines int) (string, error) {
+func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
 	head, err := repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD: %w", err)
+		return nil, fmt.Errorf("getting HEAD: %w", err)
 	}
 	headCommit, err := repo.CommitObject(head.Hash())
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD commit: %w", err)
+		return nil, fmt.Errorf("getting HEAD commit: %w", err)
 	}
 	headTree, err := headCommit.Tree()
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD tree: %w", err)
+		return nil, fmt.Errorf("getting HEAD tree: %w", err)
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		return "", fmt.Errorf("getting worktree: %w", err)
+		return nil, fmt.Errorf("getting worktree: %w", err)
 	}
 	status, err := wt.Status()
 	if err != nil {
-		return "", fmt.Errorf("getting status: %w", err)
+		return nil, fmt.Errorf("getting status: %w", err)
 	}
 
-	var sb strings.Builder
+	result := &DiffResult{
+		Status:  "no_changes",
+		Base:    "HEAD",
+		Target:  "index",
+		Files:   []DiffFile{},
+		Summary: DiffSummary{},
+	}
+
+	var rawSB strings.Builder
 	for path, s := range status {
 		if s.Staging == gogit.Unmodified || s.Staging == gogit.Untracked {
 			continue
@@ -134,41 +607,63 @@ func gitDiffStaged(repo *gogit.Repository, contextLines int) (string, error) {
 				break
 			}
 		}
-		sb.WriteString(unifiedDiff("a/"+path, "b/"+path, oldContent, newContent, contextLines))
+
+		rawSB.WriteString(unifiedDiff("a/"+path, "b/"+path, oldContent, newContent, contextLines))
+
+		df := manualDiffToFile(path, oldContent, newContent, statusCodeToString(s.Staging), contextLines)
+		if df != nil {
+			if maxFiles > 0 && len(result.Files) >= maxFiles {
+				result.Truncated = true
+				break
+			}
+			result.Files = append(result.Files, *df)
+			result.Summary.TotalAdditions += df.Additions
+			result.Summary.TotalDeletions += df.Deletions
+		}
 	}
-	return sb.String(), nil
+
+	if len(result.Files) > 0 {
+		result.Status = "has_changes"
+		result.Summary.TotalFiles = len(result.Files)
+		result.RawText = rawSB.String()
+		sort.Slice(result.Files, func(i, j int) bool {
+			return result.Files[i].Path < result.Files[j].Path
+		})
+	}
+
+	return result, nil
 }
 
 // gitDiff shows differences between the current HEAD and a target ref.
-func gitDiff(repo *gogit.Repository, target string, contextLines int) (string, error) {
+func gitDiff(repo *gogit.Repository, target string, contextLines, maxFiles int) (*DiffResult, error) {
 	if err := validateRefName(target); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	head, err := repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD: %w", err)
+		return nil, fmt.Errorf("getting HEAD: %w", err)
 	}
 	headCommit, err := repo.CommitObject(head.Hash())
 	if err != nil {
-		return "", fmt.Errorf("getting HEAD commit: %w", err)
+		return nil, fmt.Errorf("getting HEAD commit: %w", err)
 	}
 
 	targetHash, err := repo.ResolveRevision(plumbing.Revision(target))
 	if err != nil {
-		return "", fmt.Errorf("resolving target %q: %w", target, err)
+		return nil, fmt.Errorf("resolving target %q: %w", target, err)
 	}
 	targetCommit, err := repo.CommitObject(*targetHash)
 	if err != nil {
-		return "", fmt.Errorf("getting target commit: %w", err)
+		return nil, fmt.Errorf("getting target commit: %w", err)
 	}
 
 	patch, err := targetCommit.Patch(headCommit)
 	if err != nil {
-		return "", fmt.Errorf("computing diff: %w", err)
+		return nil, fmt.Errorf("computing diff: %w", err)
 	}
 
-	return encodePatch(patch, contextLines), nil
+	return patchToDiffResult(patch, target, "HEAD", contextLines, maxFiles), nil
 }
 
 // gitCommit records staged changes to the repository.
@@ -233,8 +728,8 @@ func gitReset(repo *gogit.Repository) (string, error) {
 	return "All staged changes reset", nil
 }
 
-// gitLog returns commit history entries.
-func gitLog(repo *gogit.Repository, maxCount int, startTimestamp, endTimestamp string) ([]string, error) {
+// gitLog returns commit history as a structured LogResult.
+func gitLog(repo *gogit.Repository, maxCount int, startTimestamp, endTimestamp string) (*LogResult, error) {
 	opts := &gogit.LogOptions{
 		Order: gogit.LogOrderCommitterTime,
 	}
@@ -254,25 +749,21 @@ func gitLog(repo *gogit.Repository, maxCount int, startTimestamp, endTimestamp s
 		opts.Until = &t
 	}
 
+	refMap := buildRefMap(repo)
+
 	iter, err := repo.Log(opts)
 	if err != nil {
 		return nil, fmt.Errorf("getting log: %w", err)
 	}
 	defer iter.Close()
 
-	var entries []string
+	result := &LogResult{Commits: []CommitInfo{}}
 	count := 0
 	err = iter.ForEach(func(c *object.Commit) error {
 		if maxCount > 0 && count >= maxCount {
 			return fmt.Errorf("stop") // sentinel to stop iteration
 		}
-		entries = append(entries, fmt.Sprintf(
-			"Commit: %q\nAuthor: %q\nDate: %s\nMessage: %q\n",
-			c.Hash.String(),
-			c.Author.Name,
-			c.Author.When.Format(time.RFC3339),
-			strings.TrimRight(c.Message, "\n"),
-		))
+		result.Commits = append(result.Commits, commitToInfo(c, refMap))
 		count++
 		return nil
 	})
@@ -280,7 +771,7 @@ func gitLog(repo *gogit.Repository, maxCount int, startTimestamp, endTimestamp s
 	if err != nil && err.Error() != "stop" {
 		return nil, fmt.Errorf("iterating commits: %w", err)
 	}
-	return entries, nil
+	return result, nil
 }
 
 // gitCreateBranch creates a new branch from baseBranch (or HEAD).
@@ -337,58 +828,55 @@ func gitCheckout(repo *gogit.Repository, branchName string) (string, error) {
 	return fmt.Sprintf("Switched to branch %q", branchName), nil
 }
 
-// gitShow shows the contents of a commit (metadata + diff).
-func gitShow(repo *gogit.Repository, revision string) (string, error) {
+// gitShow shows the contents of a commit (metadata + diff) as a structured ShowResult.
+func gitShow(repo *gogit.Repository, revision string) (*ShowResult, error) {
 	hash, err := repo.ResolveRevision(plumbing.Revision(revision))
 	if err != nil {
-		return "", fmt.Errorf("resolving revision %q: %w", revision, err)
+		return nil, fmt.Errorf("resolving revision %q: %w", revision, err)
 	}
 
 	commit, err := repo.CommitObject(*hash)
 	if err != nil {
-		return "", fmt.Errorf("getting commit: %w", err)
+		return nil, fmt.Errorf("getting commit: %w", err)
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Commit: %q\nAuthor: %q\nDate: %s\nMessage: %q\n",
-		commit.Hash.String(),
-		commit.Author.Name,
-		commit.Author.When.Format(time.RFC3339),
-		strings.TrimRight(commit.Message, "\n"),
-	)
+	refMap := buildRefMap(repo)
 
 	var patch *object.Patch
 	if commit.NumParents() > 0 {
 		parent, err := commit.Parent(0)
 		if err != nil {
-			return "", fmt.Errorf("getting parent commit: %w", err)
+			return nil, fmt.Errorf("getting parent commit: %w", err)
 		}
 		patch, err = parent.Patch(commit)
 		if err != nil {
-			return "", fmt.Errorf("computing patch: %w", err)
+			return nil, fmt.Errorf("computing patch: %w", err)
 		}
 	} else {
 		// Initial commit: diff against empty tree
 		emptyTree := &object.Tree{}
 		commitTree, err := commit.Tree()
 		if err != nil {
-			return "", fmt.Errorf("getting commit tree: %w", err)
+			return nil, fmt.Errorf("getting commit tree: %w", err)
 		}
 		patch, err = emptyTree.Patch(commitTree)
 		if err != nil {
-			return "", fmt.Errorf("computing initial commit patch: %w", err)
+			return nil, fmt.Errorf("computing initial commit patch: %w", err)
 		}
 	}
 
-	sb.WriteString(encodePatch(patch, DefaultContextLines))
-	return sb.String(), nil
+	result := &ShowResult{
+		Commit: commitToInfo(commit, refMap),
+		Diff:   *patchToDiffResult(patch, "", "", DefaultContextLines, 0),
+	}
+	return result, nil
 }
 
-// gitBranch lists branches filtered by type and optional contains/not-contains SHA.
-func gitBranch(repo *gogit.Repository, branchType, contains, notContains string) (string, error) {
+// gitBranch lists branches as a structured BranchResult.
+func gitBranch(repo *gogit.Repository, branchType, contains, notContains string) (*BranchResult, error) {
 	refs, err := repo.References()
 	if err != nil {
-		return "", fmt.Errorf("listing references: %w", err)
+		return nil, fmt.Errorf("listing references: %w", err)
 	}
 
 	var containsHash, notContainsHash plumbing.Hash
@@ -399,10 +887,19 @@ func gitBranch(repo *gogit.Repository, branchType, contains, notContains string)
 		notContainsHash = plumbing.NewHash(notContains)
 	}
 
-	var names []string
+	result := &BranchResult{
+		Branches: []BranchInfo{},
+	}
+
 	var currentBranch string
 	if head, err := repo.Head(); err == nil {
-		currentBranch = head.Name().Short()
+		if head.Name().IsBranch() {
+			currentBranch = head.Name().Short()
+			result.CurrentBranch = currentBranch
+		} else {
+			result.IsDetached = true
+			result.CurrentBranch = head.Hash().String()[:7]
+		}
 	}
 
 	err = refs.ForEach(func(ref *plumbing.Reference) error {
@@ -438,19 +935,38 @@ func gitBranch(repo *gogit.Repository, branchType, contains, notContains string)
 		}
 
 		shortName := name.Short()
-		prefix := "  "
-		if shortName == currentBranch && name.IsBranch() {
-			prefix = "* "
+		isCurrent := shortName == currentBranch && name.IsBranch()
+
+		bi := BranchInfo{
+			Name:          shortName,
+			IsCurrent:     isCurrent,
+			LastCommitSHA: ref.Hash().String(),
 		}
-		names = append(names, prefix+shortName)
+
+		if commit, err := repo.CommitObject(ref.Hash()); err == nil {
+			bi.LastCommitDate = commit.Author.When.Format(time.RFC3339)
+		}
+
+		if name.IsBranch() {
+			if cfg, err := repo.Config(); err == nil {
+				if branchCfg, ok := cfg.Branches[shortName]; ok && branchCfg.Remote != "" {
+					bi.Tracking = branchCfg.Remote + "/" + branchCfg.Merge.Short()
+				}
+			}
+		}
+
+		result.Branches = append(result.Branches, bi)
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	sort.Strings(names)
-	return strings.Join(names, "\n"), nil
+	sort.Slice(result.Branches, func(i, j int) bool {
+		return result.Branches[i].Name < result.Branches[j].Name
+	})
+
+	return result, nil
 }
 
 // refContainsCommit checks whether the commit reachable from refHash contains targetHash in its ancestry.

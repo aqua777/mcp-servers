@@ -33,7 +33,8 @@ func runGitMCPServer(args []string) error {
 
 	ctx := context.Background()
 
-	cmd := exec.Command("go", "run", "../../cmd/git-mcp/main.go", "--repository", repoPath)
+	// Start git-mcp server in AI mode for optimal JSON output
+	cmd := exec.Command("go", "run", "../../cmd/git-mcp/main.go", "--repository", repoPath, "--ai-mode")
 	cmd.Stderr = os.Stderr
 
 	stdout, err := cmd.StdoutPipe()

@@ -241,6 +241,25 @@ This document tracks feature parity between the Go implementations and their res
 - **`git_show`** - Commit metadata and diff for any revision
 - **`git_branch`** - List local/remote/all branches with optional `contains`/`not_contains` SHA filters
 
+#### Output Format
+- **Dual output modes** - All 7 read-only tools (`git_status`, `git_diff_unstaged`, `git_diff_staged`, `git_diff`, `git_log`, `git_show`, `git_branch`) support both text and JSON output
+- **Server-level default** - `--output` / `-o` CLI flag sets the default format (`text` or `json`)
+- **AI-first mode** - `--ai-mode` / `-a` CLI flag defaults to JSON output and enables structured error responses
+- **Per-call override** - Each read tool accepts a `format` parameter to override the server default
+- **Structured JSON** - JSON output includes rich metadata: repository info, file changes with line numbers, diff summaries, commit refs, branch tracking info
+- **Git CLI text** - Text output matches `git` CLI formatting (e.g., `git log`, `git status`, unified diff)
+
+#### Advanced Diff Features
+- **`include_diff_content`** - Boolean parameter for diff operations (`git_diff_unstaged`, `git_diff_staged`, `git_diff`, `git_show`) to toggle line-level changes in JSON output (default: `true`). When `false`, returns file-level metadata only (path, status, additions, deletions) without the `changes[]` array
+- **`max_files`** - Integer parameter for diff operations to limit the number of files included in the result (0 = unlimited). When truncated, the `truncated` field is set to `true` in the JSON response
+- **Context after** - Diff changes now include `context_after` field with up to 3 lines of context following each addition/deletion, in addition to the existing `context_before`
+
+#### Enhanced Metadata
+- **Ahead/behind computation** - `git_status` now computes actual ahead/behind counts for tracked branches by walking the commit graph, replacing the hardcoded "up_to_date" status
+- **Untracked file types** - `git_status` JSON output includes a `type` field ("file" or "directory") for untracked entries
+- **Detached HEAD support** - `git_branch` detects detached HEAD state and sets `is_detached: true` with the short SHA as `current_branch`
+- **Structured errors** - When using JSON format or AI mode, errors are returned as structured JSON with `error.code` and `error.message` fields
+
 #### Security
 - **Repository path restriction** - `--repository` / `GIT_REPOSITORY` flag restricts all `repo_path` arguments to a configured directory
 - **Symlink-safe path validation** - Uses `filepath.EvalSymlinks` on both sides to prevent traversal via symlinks
@@ -255,6 +274,10 @@ This document tracks feature parity between the Go implementations and their res
 #### Diff Output Format
 - **Python**: `git_diff_unstaged` and `git_diff_staged` call `repo.git.diff()` which uses the system git binary's unified diff format directly.
 - **Go**: Produces unified diff output using go-git's `UnifiedEncoder` and a custom character-level diff for unstaged changes. The output is functionally equivalent but may differ in whitespace or hunk headers in edge cases.
+
+#### Structured Output
+- **Python**: Returns plain text strings only.
+- **Go**: Returns either Git CLI-style text or structured JSON with full metadata (file paths, line numbers, change types, summaries). JSON mode is an extension not present in the Python reference.
 
 #### Commit Authorship
 - **Python**: Uses the configured git identity from `.gitconfig`.
