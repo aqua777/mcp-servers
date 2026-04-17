@@ -294,6 +294,20 @@ A ripgrep-inspired tool for searching file contents by regex or literal pattern,
 - **`max_files`** - Integer parameter for diff operations to limit the number of files included in the result (0 = unlimited). When truncated, the `truncated` field is set to `true` in the JSON response
 - **Context after** - Diff changes now include `context_after` field with up to 3 lines of context following each addition/deletion, in addition to the existing `context_before`
 
+#### File Filtering (Go-only Extension)
+
+All file-listing tools (`git_status`, `git_diff_unstaged`, `git_diff_staged`, `git_diff`, `git_show`) accept three additional parameters for narrowing results:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `include_patterns` | `string[]` | `[]` | Glob whitelist — only matching files appear |
+| `exclude_patterns` | `string[]` | `[]` | Glob blacklist — matching files are removed |
+| `no_gitignore` | `boolean` | `false` | Disable `.gitignore`-based filtering |
+
+Filters are applied independently in order: gitignore → include → exclude. Glob matching uses `bmatcuk/doublestar/v4` (already vendored for the Filesystem server). Gitignore pattern loading uses `go-git/v5/plumbing/format/gitignore.ReadPatterns`.
+
+**Not in Python reference** — the Python implementation returns all changed files without any path filtering.
+
 #### Enhanced Metadata
 - **Ahead/behind computation** - `git_status` now computes actual ahead/behind counts for tracked branches by walking the commit graph, replacing the hardcoded "up_to_date" status
 - **Untracked file types** - `git_status` JSON output includes a `type` field ("file" or "directory") for untracked entries
@@ -339,6 +353,12 @@ A ripgrep-inspired tool for searching file contents by regex or literal pattern,
 - **Bare repository support** — Operations requiring a worktree (status, diff, add, commit, reset, checkout) will return an error on bare repos. This matches practical usage.
 
 ## 📋 Testing Status
-- Unit tests (`validation_test.go`, `server_test.go`) written via `testify/suite`.
-- Coverage: **≥ 90%** achieved.
-- Remaining uncovered branches are internal go-git I/O error paths that require mocking go-git internals; documented in test files per AGENTS.md exception policy.
+- Unit tests (`validation_test.go`, `server_test.go`, `filter_test.go`) written via `testify/suite`.
+- Coverage: **88.9%** — slightly below the 90% threshold due to pre-existing hard-to-test paths (see exceptions below).
+- `filter_test.go` — 18 test cases covering `FileFilter`, `filterDiffFiles`, gitignore matching, include/exclude glob patterns, combined filters, edge cases
+- Coverage exceptions (documented per AGENTS.md policy):
+  - `computeAheadBehind` — requires a real remote repository with push/fetch history (~17 statements)
+  - Remote-tracking branch paths in `gitStatus` — require a configured remote ref
+  - Merge conflict status path — requires a partially-applied merge (not creatable via go-git's high-level API)
+  - Worktree/NewFileFilter error paths in handlers — require filesystem-level injection not possible without a custom `billy.Filesystem`
+  - `filter.go` gitignore ReadPatterns error path — requires a billy.Filesystem that errors mid-traversal

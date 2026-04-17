@@ -357,7 +357,8 @@ func manualDiffToFile(path, oldContent, newContent, status string, contextLines 
 }
 
 // gitStatus returns the working tree status as a structured StatusResult.
-func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
+// When filter is non-nil and non-empty, only file changes matching the filter are included.
+func gitStatus(repo *gogit.Repository, filter *FileFilter) (*StatusResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("getting worktree: %w", err)
@@ -445,6 +446,14 @@ func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 		}
 	}
 
+	// Apply file filter if set
+	if filter != nil && !filter.IsEmpty() {
+		result.Changes.Staged = filterFileChanges(result.Changes.Staged, filter)
+		result.Changes.Unstaged = filterFileChanges(result.Changes.Unstaged, filter)
+		result.Changes.Untracked = filterFileChanges(result.Changes.Untracked, filter)
+		result.Changes.Conflicts = filterFileChanges(result.Changes.Conflicts, filter)
+	}
+
 	sortFileChanges(result.Changes.Staged)
 	sortFileChanges(result.Changes.Unstaged)
 	sortFileChanges(result.Changes.Untracked)
@@ -462,8 +471,20 @@ func gitStatus(repo *gogit.Repository) (*StatusResult, error) {
 	return result, nil
 }
 
+// filterFileChanges returns only the FileChange entries that pass the filter.
+func filterFileChanges(changes []FileChange, filter *FileFilter) []FileChange {
+	out := changes[:0]
+	for _, fc := range changes {
+		if filter.Match(fc.Path, false) {
+			out = append(out, fc)
+		}
+	}
+	return out
+}
+
 // gitDiffUnstaged shows changes in the working directory not yet staged.
-func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
+// When filter is non-nil and non-empty, only matching files are included.
+func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int, filter *FileFilter) (*DiffResult, error) {
 	wt, err := repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("getting worktree: %w", err)
@@ -498,6 +519,9 @@ func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffR
 	var rawSB strings.Builder
 	for path, s := range status {
 		if s.Worktree != gogit.Unmodified && s.Worktree != gogit.Untracked {
+			if filter != nil && !filter.IsEmpty() && !filter.Match(path, false) {
+				continue
+			}
 			file, err := headTree.File(path)
 			if err != nil {
 				// New file in index — show as added in worktree
@@ -544,7 +568,8 @@ func gitDiffUnstaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffR
 }
 
 // gitDiffStaged shows changes that are staged for commit (index vs HEAD).
-func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffResult, error) {
+// When filter is non-nil and non-empty, only matching files are included.
+func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int, filter *FileFilter) (*DiffResult, error) {
 	head, err := repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("getting HEAD: %w", err)
@@ -578,6 +603,9 @@ func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffRes
 	var rawSB strings.Builder
 	for path, s := range status {
 		if s.Staging == gogit.Unmodified || s.Staging == gogit.Untracked {
+			continue
+		}
+		if filter != nil && !filter.IsEmpty() && !filter.Match(path, false) {
 			continue
 		}
 		var oldContent string
@@ -635,7 +663,8 @@ func gitDiffStaged(repo *gogit.Repository, contextLines, maxFiles int) (*DiffRes
 }
 
 // gitDiff shows differences between the current HEAD and a target ref.
-func gitDiff(repo *gogit.Repository, target string, contextLines, maxFiles int) (*DiffResult, error) {
+// When filter is non-nil and non-empty, only matching files are included.
+func gitDiff(repo *gogit.Repository, target string, contextLines, maxFiles int, filter *FileFilter) (*DiffResult, error) {
 	if err := validateRefName(target); err != nil {
 		return nil, err
 	}
@@ -663,7 +692,9 @@ func gitDiff(repo *gogit.Repository, target string, contextLines, maxFiles int) 
 		return nil, fmt.Errorf("computing diff: %w", err)
 	}
 
-	return patchToDiffResult(patch, target, "HEAD", contextLines, maxFiles), nil
+	result := patchToDiffResult(patch, target, "HEAD", contextLines, maxFiles)
+	filterDiffFiles(result, filter)
+	return result, nil
 }
 
 // gitCommit records staged changes to the repository.
@@ -829,7 +860,8 @@ func gitCheckout(repo *gogit.Repository, branchName string) (string, error) {
 }
 
 // gitShow shows the contents of a commit (metadata + diff) as a structured ShowResult.
-func gitShow(repo *gogit.Repository, revision string) (*ShowResult, error) {
+// When filter is non-nil and non-empty, only matching diff files are included.
+func gitShow(repo *gogit.Repository, revision string, filter *FileFilter) (*ShowResult, error) {
 	hash, err := repo.ResolveRevision(plumbing.Revision(revision))
 	if err != nil {
 		return nil, fmt.Errorf("resolving revision %q: %w", revision, err)
@@ -865,9 +897,11 @@ func gitShow(repo *gogit.Repository, revision string) (*ShowResult, error) {
 		}
 	}
 
+	diffResult := patchToDiffResult(patch, "", "", DefaultContextLines, 0)
+	filterDiffFiles(diffResult, filter)
 	result := &ShowResult{
 		Commit: commitToInfo(commit, refMap),
-		Diff:   *patchToDiffResult(patch, "", "", DefaultContextLines, 0),
+		Diff:   *diffResult,
 	}
 	return result, nil
 }
