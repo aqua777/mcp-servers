@@ -309,6 +309,116 @@ func TestFormatMoveFileJSON(t *testing.T) {
 	assert.Equal(t, "/test/new.txt", parsed.Destination)
 }
 
+func TestFormatCopyFileText(t *testing.T) {
+	result := &CopyResult{
+		Source:      "/src",
+		Destination: "/dst",
+		Status:      "ok",
+		Entries:     []CopiedEntry{{Source: "/src/a.go", Destination: "/dst/a.go", Type: "file"}},
+		Summary:     CopyFileSummary{FilesCopied: 1, BytesCopied: 42},
+	}
+
+	text := formatCopyFileText(result)
+	assert.Contains(t, text, "Successfully copied")
+	assert.Contains(t, text, "1 file(s)")
+	assert.Contains(t, text, "42 bytes")
+	assert.Contains(t, text, "/dst")
+}
+
+func TestFormatCopyFileJSON(t *testing.T) {
+	result := &CopyResult{
+		Source:      "/src",
+		Destination: "/dst",
+		Status:      "ok",
+		Entries:     []CopiedEntry{{Source: "/src/a.go", Destination: "/dst/a.go", Type: "file"}},
+		Summary:     CopyFileSummary{FilesCopied: 1, BytesCopied: 42},
+	}
+
+	jsonStr := formatCopyFileJSON(result)
+
+	var parsed CopyResult
+	err := json.Unmarshal([]byte(jsonStr), &parsed)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", parsed.Status)
+	assert.Equal(t, 1, parsed.Summary.FilesCopied)
+	assert.EqualValues(t, 42, parsed.Summary.BytesCopied)
+}
+
+func TestFormatAppendFileTextExisting(t *testing.T) {
+	result := &AppendResult{
+		Path:         "/test/file.txt",
+		Status:       "ok",
+		BytesWritten: 20,
+		Created:      false,
+	}
+
+	text := formatAppendFileText(result)
+	assert.Contains(t, text, "appended")
+	assert.Contains(t, text, "20 bytes")
+	assert.Contains(t, text, "/test/file.txt")
+}
+
+func TestFormatAppendFileTextCreated(t *testing.T) {
+	result := &AppendResult{
+		Path:         "/test/new.txt",
+		Status:       "ok",
+		BytesWritten: 10,
+		Created:      true,
+	}
+
+	text := formatAppendFileText(result)
+	assert.Contains(t, text, "created")
+	assert.Contains(t, text, "10 bytes")
+}
+
+func TestFormatAppendFileJSON(t *testing.T) {
+	result := &AppendResult{
+		Path:         "/test/file.txt",
+		Status:       "ok",
+		BytesWritten: 20,
+		Created:      false,
+	}
+
+	jsonStr := formatAppendFileJSON(result)
+
+	var parsed AppendResult
+	err := json.Unmarshal([]byte(jsonStr), &parsed)
+	require.NoError(t, err)
+	assert.Equal(t, "/test/file.txt", parsed.Path)
+	assert.Equal(t, 20, parsed.BytesWritten)
+	assert.False(t, parsed.Created)
+}
+
+func TestFormatSymlinkText(t *testing.T) {
+	result := &SymlinkResult{
+		Path:   "/test/link.txt",
+		Target: "/test/real.txt",
+		Status: "ok",
+	}
+
+	text := formatSymlinkText(result)
+	assert.Contains(t, text, "Successfully created symlink")
+	assert.Contains(t, text, "/test/link.txt")
+	assert.Contains(t, text, "/test/real.txt")
+}
+
+func TestFormatSymlinkJSON(t *testing.T) {
+	result := &SymlinkResult{
+		Path:   "/test/link.txt",
+		Target: "/test/real.txt",
+		Status: "ok",
+	}
+
+	jsonStr := formatSymlinkJSON(result)
+
+	var parsed SymlinkResult
+	err := json.Unmarshal([]byte(jsonStr), &parsed)
+	require.NoError(t, err)
+	assert.Equal(t, "/test/link.txt", parsed.Path)
+	assert.Equal(t, "/test/real.txt", parsed.Target)
+	assert.Equal(t, "ok", parsed.Status)
+}
+
 func TestFormatAllowedDirectoriesJSON(t *testing.T) {
 	result := &AllowedDirectoriesResult{
 		AllowedDirectories: []string{"/test", "/home"},

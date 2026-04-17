@@ -1,4 +1,4 @@
-FROM golang:1.25 AS golang
+FROM golang:1.26 AS golang
 
 ARG DEV_USER_ID=1001
 ARG DEV_USER_NAME=dev

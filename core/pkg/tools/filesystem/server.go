@@ -89,6 +89,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 	// Register tools
 	fsServer.registerReadTools()
 	fsServer.registerWriteTools()
+	fsServer.registerCopyAppendSymlinkTools()
 	fsServer.registerListTools()
 	fsServer.registerEditTools()
 	fsServer.registerGrepTools()

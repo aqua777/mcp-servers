@@ -51,9 +51,47 @@ A ripgrep-inspired tool for searching file contents by regex or literal pattern,
 
 **Not in scope (future)**: multiline matching, word-boundary flag, invert match, count-only mode, file-type filters, max-depth, max-filesize, follow symlinks.
 
+#### File Copy: `copy_file`
+
+Copies files or directories. Not present in the TypeScript reference implementation.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | — | Source path or glob pattern (required) |
+| `destination` | string | — | Destination path (required) |
+| `recursive` | bool | `false` | Required to copy directories |
+| `excludePatterns` | []string | — | Glob patterns to skip during recursive copy |
+| `format` | string | server default | Output format: `text` or `json` |
+
+**Glob mode**: when `source` contains `*`, `?`, or `[`, it is resolved via `doublestar.FilepathGlob` and all matches are copied into `destination` (treated as a directory). **Single-file mode**: plain source path; destination must not already exist (matches `move_file` semantics). Directories require `recursive: true`.
+
+#### File Append: `append_file`
+
+Appends content to a file, creating it if it does not exist. Not present in the TypeScript reference implementation.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | — | File to append to (required) |
+| `content` | string | — | Content to append (required) |
+| `format` | string | server default | Output format: `text` or `json` |
+
+Uses `O_APPEND|O_CREATE|O_WRONLY`. Response includes `created: true` when the file was newly created.
+
+#### Symbolic Link Creation: `create_symlink`
+
+Creates a symbolic link. Not present in the TypeScript reference implementation.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `target` | string | — | Path the symlink points to (required) |
+| `path` | string | — | Path of the symlink to create (required) |
+| `format` | string | server default | Output format: `text` or `json` |
+
+Both `path` and `target` are validated against allowed directories to prevent sandbox escape via symlink. Dangling symlinks (target does not exist yet) are permitted — matches standard `ln -s` behaviour.
+
 ### 📋 Testing Status
 - `grep_tools_test.go` — 30+ test cases covering all parameters, both engines, context lines, glob filters, binary detection, truncation, text and JSON formatters
-- `read_tools_test.go`, `write_tools_test.go`, `list_tools_test.go`, `edit_tools_test.go` — full coverage of all other tools
+- `read_tools_test.go`, `write_tools_test.go`, `list_tools_test.go`, `edit_tools_test.go`, `copy_append_symlink_tools_test.go` — full coverage of all other tools
 - `path_validation_test.go` — sandbox enforcement
 - `formatters_test.go` — formatter unit tests
 - **Coverage**: ≥ 93% across the `filesystem` package

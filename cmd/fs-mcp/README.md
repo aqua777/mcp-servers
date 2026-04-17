@@ -59,6 +59,9 @@ go build -o /tmp/fs-mcp ./cmd/fs-mcp
 | `write_file` | Write content to a file |
 | `create_directory` | Create a directory (including parents) |
 | `move_file` | Move or rename a file |
+| `copy_file` | Copy files or directories; source supports glob patterns |
+| `append_file` | Append content to a file, creating it if it does not exist |
+| `create_symlink` | Create a symbolic link (both path and target validated) |
 | `list_directory` | List directory contents |
 | `list_directory_with_sizes` | List directory contents with file sizes |
 | `directory_tree` | Recursive directory tree |
@@ -67,6 +70,32 @@ go build -o /tmp/fs-mcp ./cmd/fs-mcp
 | `edit_file` | Apply string-replacement edits with optional dry-run diff |
 | `get_file_info` | File metadata (size, modification time, permissions) |
 | `list_allowed_directories` | List the configured allowed directories |
+
+### `copy_file` Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `source` | string | — | Source path or glob pattern (e.g. `/dir/*.go`) |
+| `destination` | string | — | Destination file path (single copy) or directory (glob/recursive) |
+| `recursive` | bool | `false` | Required when source is or matches a directory |
+| `excludePatterns` | []string | — | Glob patterns to skip during recursive directory copy |
+| `format` | string | server default | Output format: `text` or `json` |
+
+### `append_file` Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | — | File to append to |
+| `content` | string | — | Content to append |
+| `format` | string | server default | Output format: `text` or `json` |
+
+### `create_symlink` Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `target` | string | — | Path the symlink points to (must be within allowed directories) |
+| `path` | string | — | Path of the symlink to create (must be within allowed directories) |
+| `format` | string | server default | Output format: `text` or `json` |
 
 ## IDE Configuration
 

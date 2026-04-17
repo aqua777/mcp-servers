@@ -54,6 +54,7 @@ func (s *FilesystemTestSuite) SetupTest() {
 	s.fsServer.server = mcp.NewServer(&mcp.Implementation{Name: "test", Version: "1"}, nil)
 	s.fsServer.registerReadTools()
 	s.fsServer.registerWriteTools()
+	s.fsServer.registerCopyAppendSymlinkTools()
 	s.fsServer.registerListTools()
 	s.fsServer.registerEditTools()
 	s.fsServer.registerGrepTools()

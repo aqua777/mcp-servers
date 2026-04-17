@@ -250,6 +250,43 @@ func formatGrepJSON(r *GrepResult) string {
 	return string(b)
 }
 
+// formatCopyFileText renders a CopyResult in text format.
+func formatCopyFileText(r *CopyResult) string {
+	return fmt.Sprintf("Successfully copied %d file(s) (%d bytes) to %s",
+		r.Summary.FilesCopied, r.Summary.BytesCopied, r.Destination)
+}
+
+// formatCopyFileJSON renders a CopyResult as JSON.
+func formatCopyFileJSON(r *CopyResult) string {
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
+// formatAppendFileText renders an AppendResult in text format.
+func formatAppendFileText(r *AppendResult) string {
+	if r.Created {
+		return fmt.Sprintf("Successfully created and wrote %d bytes to %s", r.BytesWritten, r.Path)
+	}
+	return fmt.Sprintf("Successfully appended %d bytes to %s", r.BytesWritten, r.Path)
+}
+
+// formatAppendFileJSON renders an AppendResult as JSON.
+func formatAppendFileJSON(r *AppendResult) string {
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
+// formatSymlinkText renders a SymlinkResult in text format.
+func formatSymlinkText(r *SymlinkResult) string {
+	return fmt.Sprintf("Successfully created symlink %s -> %s", r.Path, r.Target)
+}
+
+// formatSymlinkJSON renders a SymlinkResult as JSON.
+func formatSymlinkJSON(r *SymlinkResult) string {
+	b, _ := json.Marshal(r)
+	return string(b)
+}
+
 // formatErrorJSON renders an error as structured JSON.
 func formatErrorJSON(err error) string {
 	resp := ErrorResponse{
