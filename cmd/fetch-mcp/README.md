@@ -24,6 +24,12 @@ A Go implementation of the Fetch MCP Server. Fetches URLs and returns their cont
 |------|-------------|
 | `fetch` | Fetch a URL and return its content as markdown (or raw) |
 
+## Installation
+
+```bash
+go install github.com/aqua777/mcp-servers/cmd/fetch-mcp@latest
+```
+
 ## Usage
 
 ```bash

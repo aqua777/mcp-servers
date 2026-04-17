@@ -14,6 +14,8 @@ import (
 
 func runFilesystemServer(args []string) error {
 	allowedDirectories := krait.GetStringSlice("app.allowed-directories")
+	outputFormat := krait.GetString("app.output")
+	aiMode := krait.GetBool("app.ai-mode")
 
 	if len(allowedDirectories) == 0 {
 		return fmt.Errorf("at least one allowed directory must be specified")
@@ -30,6 +32,8 @@ func runFilesystemServer(args []string) error {
 
 	opts := filesystem.Options{
 		AllowedDirectories: allowedDirectories,
+		OutputFormat:       outputFormat,
+		AIMode:             aiMode,
 	}
 
 	ctx := context.Background()
@@ -42,6 +46,8 @@ func runFilesystemServer(args []string) error {
 func main() {
 	app := krait.App(common.MCP_FileSystem, "Filesystem MCP Server", "An MCP server that provides sandboxed filesystem access tools.").
 		WithStringSliceP("app.allowed-directories", "Allowed directories for filesystem access", "allowed-directories", "", "", []string{}).
+		WithStringP("app.output", "Default output format: text or json", "output", "o", "FS_OUTPUT_FORMAT", "text").
+		WithBoolP("app.ai-mode", "Enable AI-first mode (JSON output, structured errors)", "ai-mode", "a", "FS_AI_MODE", false).
 		WithRun(runFilesystemServer)
 
 	if err := app.Execute(); err != nil {

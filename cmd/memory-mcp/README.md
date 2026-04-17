@@ -23,6 +23,12 @@ You can specify the memory file path using the `krait` flags or environment vari
 - `search_nodes`: Search for nodes based on a text query.
 - `open_nodes`: Open specific nodes by their names.
 
+## Installation
+
+```bash
+go install github.com/aqua777/mcp-servers/cmd/memory-mcp@latest
+```
+
 ## Usage
 
 ```bash

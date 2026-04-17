@@ -41,6 +41,12 @@ The Sequential Thinking tool is designed for:
 
 To disable logging of thought information to standard error, set the environment variable: `DISABLE_THOUGHT_LOGGING` to `true`.
 
+## Installation
+
+```bash
+go install github.com/aqua777/mcp-servers/cmd/sequentialthinking@latest
+```
+
 ## Usage
 
 ```bash

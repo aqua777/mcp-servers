@@ -1,4 +1,4 @@
-# Fetch & Filesystem Server Parity Matrix
+# MCP Servers Parity Matrix
 
 This document tracks feature parity between the Go implementations and their respective TypeScript/Python reference implementations.
 
@@ -17,6 +17,46 @@ This document tracks feature parity between the Go implementations and their res
 - Secure path validation preventing directory traversal
 - Dynamic access control (support for reading roots to determine allowed paths)
 - Handles absolute paths normalization accurately across OS platforms
+
+#### Output Format
+- **Dual output modes** - All read/search tools support both `text` (human-readable) and `json` (structured) output
+- **Server-level default** - `--output` / `-o` CLI flag sets the default format (`text` or `json`)
+- **AI-first mode** - `--ai-mode` / `-a` CLI flag defaults to JSON output and enables structured error responses
+- **Per-call override** - Each tool accepts an optional `format` parameter to override the server default
+
+### 🆕 Go-Only Extensions (Not in TypeScript Reference)
+
+#### Content Search: `grep`
+A ripgrep-inspired tool for searching file contents by regex or literal pattern, not present in the TypeScript reference implementation.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | string | — | Directory or file to search (required) |
+| `pattern` | string | — | Search pattern — regex or literal (required) |
+| `fixedStrings` | bool | `false` | Treat pattern as literal string (`-F` in rg) |
+| `ignoreCase` | bool | `false` | Case-insensitive match (`-i` in rg) |
+| `smartCase` | bool | `false` | Case-insensitive unless pattern has uppercase (`-S` in rg) |
+| `engine` | string | `re2` | Regex engine: `re2` (Go stdlib) or `pcre2` (lookahead/backreferences via `dlclark/regexp2`) |
+| `includePatterns` | []string | — | Only search files matching these globs (`-g '*.ext'` in rg) |
+| `excludePatterns` | []string | — | Skip files matching these globs (`-g '!*.ext'` in rg) |
+| `contextBefore` | int | `0` | Lines of context before each match (`-B N` in rg) |
+| `contextAfter` | int | `0` | Lines of context after each match (`-A N` in rg) |
+| `contextLines` | int | `0` | Symmetric context lines (`-C N` in rg) |
+| `maxMatches` | int | `1000` | Cap on total matches returned; `0` = unlimited |
+| `format` | string | server default | Output format: `text` (ripgrep-style `path:line:text`) or `json` |
+
+**JSON output** returns a structured `GrepResult` with `matches[]` (path, line number, line text, context before/after) and a `summary` (total matches, files matched, files searched, truncated flag, engine used).
+
+**Binary detection**: files containing null bytes in the first 512 bytes are silently skipped, matching ripgrep's default behavior.
+
+**Not in scope (future)**: multiline matching, word-boundary flag, invert match, count-only mode, file-type filters, max-depth, max-filesize, follow symlinks.
+
+### 📋 Testing Status
+- `grep_tools_test.go` — 30+ test cases covering all parameters, both engines, context lines, glob filters, binary detection, truncation, text and JSON formatters
+- `read_tools_test.go`, `write_tools_test.go`, `list_tools_test.go`, `edit_tools_test.go` — full coverage of all other tools
+- `path_validation_test.go` — sandbox enforcement
+- `formatters_test.go` — formatter unit tests
+- **Coverage**: ≥ 93% across the `filesystem` package
 
 ### ⚠️ Known Differences & Limitations
 

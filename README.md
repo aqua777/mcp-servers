@@ -22,7 +22,7 @@
 ### ✅ Implemented
 - **Everything** – stdio, SSE, and Streamable HTTP transports; demo tools/resources/prompts. See [`cmd/everything/README.md`](./cmd/everything/README.md).
 - **Fetch** – HTTP client with robots.txt enforcement, readability → markdown pipeline, proxy support. See [`cmd/fetch-mcp/README.md`](./cmd/fetch-mcp/README.md) and [`examples/fetch-mcp`](./examples/fetch-mcp).
-- **Filesystem** – Read/write/edit/search tools with sandboxing. See [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/fs-mcp`](./examples/fs-mcp).
+- **Filesystem** – Read/write/edit/search tools with sandboxing; includes ripgrep-inspired `grep` tool for content search (RE2 + PCRE2), dual text/JSON output, and `--ai-mode`. See [`cmd/fs-mcp/README.md`](./cmd/fs-mcp/README.md), [`docs/parity.md#📁-filesystem-server`](./docs/parity.md#📁-filesystem-server) and [`examples/fs-mcp`](./examples/fs-mcp).
 - **Memory** – JSONL-backed graph store with create/read/search/delete tools. See [`cmd/memory-mcp/README.md`](./cmd/memory-mcp/README.md) and [`examples/memory-mcp`](./examples/memory-mcp).
 - **Sequential Thinking** – In-memory thought history tools. See [`cmd/sequentialthinking/README.md`](./cmd/sequentialthinking/README.md) and [`examples/sequentialthinking`](./examples/sequentialthinking).
 - **Git** – Pure-Go git tools (status, diff, add, commit, reset, log, branch, checkout, show) with optional repository path restriction and flag-injection protection. See [`cmd/git-mcp/README.md`](./cmd/git-mcp/README.md) and [`examples/git-mcp`](./examples/git-mcp).
@@ -55,7 +55,8 @@ go build -o /tmp/fetch-mcp ./cmd/fetch-mcp
 /tmp/fetch-mcp --ignore-robots-txt --proxy-url "http://proxy.example.com:8080"
 
 go build -o /tmp/fs-mcp ./cmd/fs-mcp
-/tmp/fs-mcp ~/code/project ~/notes
+/tmp/fs-mcp --allowed-directories ~/code/project --allowed-directories ~/notes
+/tmp/fs-mcp --ai-mode --allowed-directories ~/code/project  # JSON output + structured errors
 
 go build -o /tmp/memory-mcp ./cmd/memory-mcp
 /tmp/memory-mcp --memory-file-path /tmp/mcp-memory.jsonl

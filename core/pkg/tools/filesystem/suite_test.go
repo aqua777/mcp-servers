@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/suite"
 )
 
 type FilesystemTestSuite struct {
@@ -45,7 +45,7 @@ func (s *FilesystemTestSuite) SetupTest() {
 	s.Require().NoError(err)
 	s.server = server
 
-	// Extract the underlying FilesystemServer to call tools directly if needed, 
+	// Extract the underlying FilesystemServer to call tools directly if needed,
 	// though we usually test via the MCP handlers.
 	// We have to recreate fsServer here because NewServer hides it, but we can test the handlers directly.
 	s.fsServer = &FilesystemServer{
@@ -56,6 +56,7 @@ func (s *FilesystemTestSuite) SetupTest() {
 	s.fsServer.registerWriteTools()
 	s.fsServer.registerListTools()
 	s.fsServer.registerEditTools()
+	s.fsServer.registerGrepTools()
 }
 
 func (s *FilesystemTestSuite) TearDownTest() {

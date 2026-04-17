@@ -47,7 +47,9 @@ func (s *FilesystemTestSuite) TestEditFile() {
 	res, err = s.fsServer.handleEditFile(s.ctx, req)
 	s.Require().NoError(err)
 	s.Require().False(res.IsError)
-	s.Contains(res.Content[0].(*mcp.TextContent).Text, "Dry run diff")
+	diffOutput := res.Content[0].(*mcp.TextContent).Text
+	s.Contains(diffOutput, "---")
+	s.Contains(diffOutput, "+++")
 
 	// Verify file was NOT modified in dry run
 	content, err = os.ReadFile(testFile)
@@ -69,7 +71,7 @@ func (s *FilesystemTestSuite) TestEditFile() {
 
 	// Test invalid path
 	args, _ = json.Marshal(map[string]any{
-		"path": "/etc/passwd",
+		"path":  "/etc/passwd",
 		"edits": []map[string]string{{"oldText": "", "newText": ""}},
 	})
 	req.Params.Arguments = args
@@ -96,7 +98,7 @@ func (s *FilesystemTestSuite) TestGetFileInfo() {
 	var info map[string]any
 	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &info)
 	s.Require().NoError(err)
-	
+
 	s.Equal("file", info["type"])
 	s.Equal(float64(9), info["size"]) // JSON unmarshals numbers as float64
 
@@ -106,7 +108,7 @@ func (s *FilesystemTestSuite) TestGetFileInfo() {
 	res, err = s.fsServer.handleGetFileInfo(s.ctx, req)
 	s.Require().NoError(err)
 	s.Require().False(res.IsError)
-	
+
 	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &info)
 	s.Require().NoError(err)
 	s.Equal("directory", info["type"])
@@ -117,7 +119,7 @@ func (s *FilesystemTestSuite) TestGetFileInfo() {
 	res, err = s.fsServer.handleGetFileInfo(s.ctx, req)
 	s.Require().NoError(err)
 	s.Require().True(res.IsError)
-	
+
 	// Test file not found
 	args, _ = json.Marshal(map[string]any{"path": filepath.Join(s.testDir, "missing.txt")})
 	req.Params.Arguments = args
@@ -138,10 +140,85 @@ func (s *FilesystemTestSuite) TestListAllowedDirectories() {
 	s.Require().NoError(err)
 	s.Require().False(res.IsError)
 
-	var result map[string][]string
+	var result map[string]any
 	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result)
 	s.Require().NoError(err)
-	
-	s.Len(result["allowedDirectories"], 1)
-	s.Equal(s.allowedDir, result["allowedDirectories"][0])
+
+	dirs, ok := result["allowed_directories"].([]any)
+	s.Require().True(ok)
+	s.Len(dirs, 1)
+	s.Equal(s.allowedDir, dirs[0])
+}
+
+func (s *FilesystemTestSuite) TestEditFileJSONFormat() {
+	testFile := s.createFile("edit_me.txt", "line1\nline2\nline3\n")
+
+	args, _ := json.Marshal(map[string]any{
+		"path": testFile,
+		"edits": []map[string]string{
+			{"oldText": "line2", "newText": "line2_edited"},
+		},
+		"dryRun": false,
+		"format": "json",
+	})
+	req := &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "edit_file",
+			Arguments: args,
+		},
+	}
+
+	res, err := s.fsServer.handleEditFile(s.ctx, req)
+	s.Require().NoError(err)
+	s.Require().False(res.IsError)
+
+	var result EditFileResult
+	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result)
+	s.Require().NoError(err)
+	s.Equal(testFile, result.Path)
+	s.Equal("applied", result.Status)
+	s.Equal(1, result.EditsApplied)
+}
+
+func (s *FilesystemTestSuite) TestGetFileInfoJSONFormat() {
+	testFile := s.createFile("info.txt", "some data")
+
+	args, _ := json.Marshal(map[string]any{"path": testFile, "format": "json"})
+	req := &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "get_file_info",
+			Arguments: args,
+		},
+	}
+
+	res, err := s.fsServer.handleGetFileInfo(s.ctx, req)
+	s.Require().NoError(err)
+	s.Require().False(res.IsError)
+
+	var result FileInfoResult
+	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result)
+	s.Require().NoError(err)
+	s.Equal(testFile, result.Path)
+	s.Equal("file", result.Type)
+	s.Equal(int64(9), result.Size)
+}
+
+func (s *FilesystemTestSuite) TestListAllowedDirectoriesJSONFormat() {
+	args, _ := json.Marshal(map[string]any{"format": "json"})
+	req := &mcp.CallToolRequest{
+		Params: &mcp.CallToolParamsRaw{
+			Name:      "list_allowed_directories",
+			Arguments: args,
+		},
+	}
+
+	res, err := s.fsServer.handleListAllowedDirectories(s.ctx, req)
+	s.Require().NoError(err)
+	s.Require().False(res.IsError)
+
+	var result AllowedDirectoriesResult
+	err = json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &result)
+	s.Require().NoError(err)
+	s.Len(result.AllowedDirectories, 1)
+	s.Equal(s.allowedDir, result.AllowedDirectories[0])
 }

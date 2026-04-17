@@ -21,6 +21,11 @@ func (s *FilesystemServer) registerWriteTools() {
 					"type":        "string",
 					"description": "Path to the directory to create",
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"path"},
 		},
@@ -39,6 +44,11 @@ func (s *FilesystemServer) registerWriteTools() {
 				"content": map[string]any{
 					"type":        "string",
 					"description": "Content to write to the file",
+				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
 				},
 			},
 			"required": []string{"path", "content"},
@@ -59,6 +69,11 @@ func (s *FilesystemServer) registerWriteTools() {
 					"type":        "string",
 					"description": "Destination path",
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"source", "destination"},
 		},
@@ -67,15 +82,23 @@ func (s *FilesystemServer) registerWriteTools() {
 
 func (s *FilesystemServer) handleCreateDirectory(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Format string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
+	}
+
+	// Check if directory already exists
+	created := true
+	if _, err := os.Stat(validPath); err == nil {
+		created = false
 	}
 
 	err = os.MkdirAll(validPath, 0755)
@@ -83,9 +106,22 @@ func (s *FilesystemServer) handleCreateDirectory(ctx context.Context, request *m
 		return errorResult(fmt.Sprintf("Error creating directory: %v", err)), nil
 	}
 
+	result := &CreateDirectoryResult{
+		Path:    validPath,
+		Status:  "ok",
+		Created: created,
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatCreateDirectoryJSON(result)
+	} else {
+		text = formatCreateDirectoryText(result)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Successfully created directory %s", args.Path),
+			Text: text,
 		}},
 	}, nil
 }
@@ -94,11 +130,13 @@ func (s *FilesystemServer) handleWriteFile(ctx context.Context, request *mcp.Cal
 	var args struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
+		Format  string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
@@ -109,9 +147,22 @@ func (s *FilesystemServer) handleWriteFile(ctx context.Context, request *mcp.Cal
 		return errorResult(fmt.Sprintf("Error writing file: %v", err)), nil
 	}
 
+	result := &WriteResult{
+		Path:         validPath,
+		Status:       "ok",
+		BytesWritten: len(args.Content),
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatWriteFileJSON(result)
+	} else {
+		text = formatWriteFileText(result)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Successfully wrote to %s", args.Path),
+			Text: text,
 		}},
 	}, nil
 }
@@ -120,11 +171,13 @@ func (s *FilesystemServer) handleMoveFile(ctx context.Context, request *mcp.Call
 	var args struct {
 		Source      string `json:"source"`
 		Destination string `json:"destination"`
+		Format      string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validSource, err := s.validatePath(args.Source)
 	if err != nil {
 		return errorResult(fmt.Sprintf("Source validation error: %v", err)), nil
@@ -150,9 +203,22 @@ func (s *FilesystemServer) handleMoveFile(ctx context.Context, request *mcp.Call
 		return errorResult(fmt.Sprintf("Error moving file: %v", err)), nil
 	}
 
+	result := &MoveResult{
+		Source:      validSource,
+		Destination: validDest,
+		Status:      "ok",
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatMoveFileJSON(result)
+	} else {
+		text = formatMoveFileText(result)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Successfully moved %s to %s", args.Source, args.Destination),
+			Text: text,
 		}},
 	}, nil
 }
