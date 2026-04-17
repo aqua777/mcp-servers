@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/sergi/go-diff/diffmatchpatch"
+	"github.com/pmezard/go-difflib/difflib"
 )
 
 func (s *FilesystemServer) registerEditTools() {
@@ -43,6 +43,11 @@ func (s *FilesystemServer) registerEditTools() {
 					"description": "Preview changes without applying (default: false)",
 					"default":     false,
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"path", "edits"},
 		},
@@ -58,6 +63,11 @@ func (s *FilesystemServer) registerEditTools() {
 					"type":        "string",
 					"description": "Path to the file or directory",
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"path"},
 		},
@@ -67,8 +77,14 @@ func (s *FilesystemServer) registerEditTools() {
 		Name:        "list_allowed_directories",
 		Description: `List all directories the server is allowed to access.`,
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
+			},
 		},
 	}, s.handleListAllowedDirectories)
 }
@@ -82,11 +98,13 @@ func (s *FilesystemServer) handleEditFile(ctx context.Context, request *mcp.Call
 		Path   string `json:"path"`
 		Edits  []Edit `json:"edits"`
 		DryRun bool   `json:"dryRun"`
+		Format string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
@@ -99,23 +117,51 @@ func (s *FilesystemServer) handleEditFile(ctx context.Context, request *mcp.Call
 
 	content := string(contentBytes)
 	originalContent := content
+	editsApplied := 0
 
 	for i, edit := range args.Edits {
 		if !strings.Contains(content, edit.OldText) {
 			return errorResult(fmt.Sprintf("Edit %d failed: oldText not found in file", i+1)), nil
 		}
-		content = strings.Replace(content, edit.OldText, edit.NewText, 1) // Replace first occurrence only (similar to TS implementation if not global)
-		// Note: The TS implementation uses advanced parsing/matching. We are using simple string replacement here as a baseline.
+		content = strings.Replace(content, edit.OldText, edit.NewText, 1)
+		editsApplied++
+	}
+
+	var diffText string
+	if args.DryRun || format == FormatJSON {
+		diff := difflib.UnifiedDiff{
+			A:        difflib.SplitLines(originalContent),
+			B:        difflib.SplitLines(content),
+			FromFile: args.Path,
+			ToFile:   args.Path,
+			Context:  3,
+		}
+		dt, err := difflib.GetUnifiedDiffString(diff)
+		if err != nil {
+			return errorResult(fmt.Sprintf("Error generating diff: %v", err)), nil
+		}
+		diffText = dt
 	}
 
 	if args.DryRun {
-		dmp := diffmatchpatch.New()
-		diffs := dmp.DiffMain(originalContent, content, false)
-		diffText := dmp.DiffPrettyText(diffs)
+		result := &EditFileResult{
+			Path:           validPath,
+			Status:         "dry_run",
+			Diff:           diffText,
+			EditsApplied:   editsApplied,
+			EditsRequested: len(args.Edits),
+		}
+
+		var text string
+		if format == FormatJSON {
+			text = formatEditFileJSON(result)
+		} else {
+			text = formatEditFileText(result)
+		}
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{
-				Text: fmt.Sprintf("Dry run diff:\n%s", diffText),
+				Text: text,
 			}},
 		}, nil
 	}
@@ -125,21 +171,37 @@ func (s *FilesystemServer) handleEditFile(ctx context.Context, request *mcp.Call
 		return errorResult(fmt.Sprintf("Error writing file: %v", err)), nil
 	}
 
+	result := &EditFileResult{
+		Path:           validPath,
+		Status:         "applied",
+		EditsApplied:   editsApplied,
+		EditsRequested: len(args.Edits),
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatEditFileJSON(result)
+	} else {
+		text = formatEditFileText(result)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Successfully edited %s", args.Path),
+			Text: text,
 		}},
 	}, nil
 }
 
 func (s *FilesystemServer) handleGetFileInfo(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Format string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
@@ -155,42 +217,55 @@ func (s *FilesystemServer) handleGetFileInfo(ctx context.Context, request *mcp.C
 		entryType = "directory"
 	}
 
-	// Getting advanced timestamps (creation, access) is OS-specific in Go.
-	// We'll provide standard info.
-	result := map[string]any{
-		"size":         info.Size(),
-		"modifiedTime": info.ModTime(),
-		"type":         entryType,
-		"permissions":  info.Mode().String(),
+	result := &FileInfoResult{
+		Path:         validPath,
+		Name:         info.Name(),
+		Size:         info.Size(),
+		Type:         entryType,
+		Permissions:  info.Mode().String(),
+		ModifiedTime: info.ModTime().Format("2006-01-02T15:04:05Z07:00"),
+		IsSymlink:    info.Mode()&os.ModeSymlink != 0,
 	}
 
-	jsonBytes, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return errorResult(fmt.Sprintf("JSON marshal error: %v", err)), nil
+	var text string
+	if format == FormatJSON {
+		text = formatFileInfoJSON(result)
+	} else {
+		text = formatFileInfoText(result)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: string(jsonBytes),
+			Text: text,
 		}},
 	}, nil
 }
 
 func (s *FilesystemServer) handleListAllowedDirectories(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	dirs := s.GetAllowedDirectories()
-
-	result := map[string]any{
-		"allowedDirectories": dirs,
+	var args struct {
+		Format string `json:"format"`
+	}
+	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
+		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
-	jsonBytes, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return errorResult(fmt.Sprintf("JSON marshal error: %v", err)), nil
+	format := s.resolveFormat(args.Format)
+	dirs := s.GetAllowedDirectories()
+
+	result := &AllowedDirectoriesResult{
+		AllowedDirectories: dirs,
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatAllowedDirectoriesJSON(result)
+	} else {
+		text = formatAllowedDirectoriesText(result)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: string(jsonBytes),
+			Text: text,
 		}},
 	}, nil
 }

@@ -38,15 +38,15 @@ func runFileSystemMCPServer(args []string) error {
 	}
 
 	if len(userQuery) == 0 {
-		return fmt.Errorf("usage: go run main.go [flags] \"Your query here\"")
+		return fmt.Errorf("usage: go run main.go --allowed-directories <dir> \"Your query here\"\n\nExample queries:\n  \"List all Go files in the directory\"\n  \"Find all files containing the word TODO\"\n  \"Search for function definitions matching func.*Handler using grep\"\n  \"Show the directory tree\"\n  \"Read the README file\"")
 	}
 
 	ctx := context.Background()
 
 	// 1. Setup the actual Transport (the "wire")
-	// Start the filesystem MCP server process
-	// We pass the allowed directories as arguments to the command
-	cmdArgs := append([]string{"run", "../../cmd/fs-mcp/main.go"}, allowedDirs...)
+	// Start the filesystem MCP server process in AI mode for structured JSON output.
+	// We pass the allowed directories as arguments to the command.
+	cmdArgs := append([]string{"run", "../../cmd/fs-mcp/main.go", "--ai-mode"}, allowedDirs...)
 	execCmd := exec.Command("go", cmdArgs...)
 	execCmd.Stderr = os.Stderr
 
@@ -107,7 +107,17 @@ func runFileSystemMCPServer(args []string) error {
 	config.BaseURL = "http://host.docker.internal:11434/v1" // Standard Ollama local port
 	llm := openai.NewClientWithConfig(config)
 
+	systemPrompt := fmt.Sprintf(
+		"You are a filesystem assistant. The allowed directories are: %s. "+
+			"Use MCP tools to answer questions about files and directories. "+
+			"Use the 'grep' tool to search file contents by pattern. "+
+			"Use 'search_files' to find files by name/glob. "+
+			"Use 'read_text_file', 'list_directory', and 'directory_tree' for reading and browsing.",
+		strings.Join(allowedDirs, ", "),
+	)
+
 	messages := []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 		{Role: openai.ChatMessageRoleUser, Content: userQuery},
 	}
 

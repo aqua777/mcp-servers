@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,7 +16,7 @@ import (
 func (s *FilesystemServer) registerListTools() {
 	s.server.AddTool(&mcp.Tool{
 		Name:        "list_directory",
-		Description: `List directory contents with [FILE] or [DIR] prefixes.`,
+		Description: `List directory contents with [FILE] or [DIR] prefixes. Optionally include file sizes and sort by name or size.`,
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -25,30 +24,25 @@ func (s *FilesystemServer) registerListTools() {
 					"type":        "string",
 					"description": "Path to the directory to list",
 				},
-			},
-			"required": []string{"path"},
-		},
-	}, s.handleListDirectory)
-
-	s.server.AddTool(&mcp.Tool{
-		Name:        "list_directory_with_sizes",
-		Description: `List directory contents with [FILE] or [DIR] prefixes, including file sizes.`,
-		InputSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path": map[string]any{
-					"type":        "string",
-					"description": "Directory path to list",
+				"include_sizes": map[string]any{
+					"type":        "boolean",
+					"description": "Include file sizes in output (default: false)",
+					"default":     false,
 				},
 				"sortBy": map[string]any{
 					"type":        "string",
 					"description": "Sort entries by 'name' or 'size' (default: 'name')",
 					"enum":        []string{"name", "size"},
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"path"},
 		},
-	}, s.handleListDirectoryWithSizes)
+	}, s.handleListDirectory)
 
 	s.server.AddTool(&mcp.Tool{
 		Name:        "search_files",
@@ -70,6 +64,11 @@ func (s *FilesystemServer) registerListTools() {
 						"type": "string",
 					},
 					"description": "Exclude patterns",
+				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
 				},
 			},
 			"required": []string{"path", "pattern"},
@@ -93,6 +92,11 @@ func (s *FilesystemServer) registerListTools() {
 					},
 					"description": "Exclude patterns",
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"enum":        []string{"text", "json"},
+					"description": "Output format (default: server setting)",
+				},
 			},
 			"required": []string{"path"},
 		},
@@ -101,47 +105,16 @@ func (s *FilesystemServer) registerListTools() {
 
 func (s *FilesystemServer) handleListDirectory(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		Path string `json:"path"`
+		Path         string `json:"path"`
+		IncludeSizes bool   `json:"include_sizes"`
+		SortBy       string `json:"sortBy"`
+		Format       string `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
-	validPath, err := s.validatePath(args.Path)
-	if err != nil {
-		return errorResult(err.Error()), nil
-	}
-
-	entries, err := os.ReadDir(validPath)
-	if err != nil {
-		return errorResult(fmt.Sprintf("Error reading directory: %v", err)), nil
-	}
-
-	var lines []string
-	for _, entry := range entries {
-		prefix := "[FILE]"
-		if entry.IsDir() {
-			prefix = "[DIR]"
-		}
-		lines = append(lines, fmt.Sprintf("%s %s", prefix, entry.Name()))
-	}
-
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{
-			Text: strings.Join(lines, "\n"),
-		}},
-	}, nil
-}
-
-func (s *FilesystemServer) handleListDirectoryWithSizes(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var args struct {
-		Path   string `json:"path"`
-		SortBy string `json:"sortBy"`
-	}
-	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
-		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
-	}
-
+	format := s.resolveFormat(args.Format)
 	if args.SortBy == "" {
 		args.SortBy = "name"
 	}
@@ -167,10 +140,12 @@ func (s *FilesystemServer) handleListDirectoryWithSizes(ctx context.Context, req
 	var totalSize int64
 
 	for _, entry := range entries {
-		info, err := entry.Info()
 		var size int64
-		if err == nil {
-			size = info.Size()
+		if args.IncludeSizes {
+			info, err := entry.Info()
+			if err == nil {
+				size = info.Size()
+			}
 		}
 
 		dirEntries = append(dirEntries, dirEntry{
@@ -187,12 +162,13 @@ func (s *FilesystemServer) handleListDirectoryWithSizes(ctx context.Context, req
 		}
 	}
 
+	// Sort entries
 	if args.SortBy == "size" {
 		sort.Slice(dirEntries, func(i, j int) bool {
 			if dirEntries[i].Size == dirEntries[j].Size {
 				return dirEntries[i].Name < dirEntries[j].Name
 			}
-			return dirEntries[i].Size > dirEntries[j].Size // Descending
+			return dirEntries[i].Size > dirEntries[j].Size
 		})
 	} else {
 		sort.Slice(dirEntries, func(i, j int) bool {
@@ -200,22 +176,45 @@ func (s *FilesystemServer) handleListDirectoryWithSizes(ctx context.Context, req
 		})
 	}
 
-	var lines []string
+	// Build structured result
+	var structuredEntries []DirectoryEntry
 	for _, e := range dirEntries {
-		prefix := "[FILE]"
+		entryType := "file"
 		if e.IsDir {
-			prefix = "[DIR]"
-			lines = append(lines, fmt.Sprintf("%s %s", prefix, e.Name))
-		} else {
-			lines = append(lines, fmt.Sprintf("%s %s (%d bytes)", prefix, e.Name, e.Size))
+			entryType = "directory"
 		}
+		var sizePtr *int64
+		if args.IncludeSizes {
+			sizePtr = &e.Size
+		}
+		structuredEntries = append(structuredEntries, DirectoryEntry{
+			Name: e.Name,
+			Type: entryType,
+			Size: sizePtr,
+		})
 	}
 
-	lines = append(lines, fmt.Sprintf("\nSummary: %d files, %d directories, %d bytes total", totalFiles, totalDirs, totalSize))
+	result := &ListDirectoryResult{
+		Path:    validPath,
+		Entries: structuredEntries,
+		Summary: DirectorySummary{
+			Files:       totalFiles,
+			Directories: totalDirs,
+			TotalSize:   totalSize,
+		},
+		SortBy: args.SortBy,
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatListDirectoryJSON(result)
+	} else {
+		text = formatListDirectoryText(result)
+	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: strings.Join(lines, "\n"),
+			Text: text,
 		}},
 	}, nil
 }
@@ -225,18 +224,20 @@ func (s *FilesystemServer) handleSearchFiles(ctx context.Context, request *mcp.C
 		Path            string   `json:"path"`
 		Pattern         string   `json:"pattern"`
 		ExcludePatterns []string `json:"excludePatterns"`
+		Format          string   `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
 	}
 
 	fileSys := os.DirFS(validPath)
-	var matches []string
+	var matches []SearchMatch
 
 	err = fs.WalkDir(fileSys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -257,7 +258,14 @@ func (s *FilesystemServer) handleSearchFiles(ctx context.Context, request *mcp.C
 		matched, err := doublestar.Match(args.Pattern, path)
 		if err == nil && matched {
 			fullPath := filepath.Join(validPath, filepath.FromSlash(path))
-			matches = append(matches, fullPath)
+			entryType := "file"
+			if d.IsDir() {
+				entryType = "directory"
+			}
+			matches = append(matches, SearchMatch{
+				Path: fullPath,
+				Type: entryType,
+			})
 		}
 
 		return nil
@@ -267,9 +275,25 @@ func (s *FilesystemServer) handleSearchFiles(ctx context.Context, request *mcp.C
 		return errorResult(fmt.Sprintf("Search error: %v", err)), nil
 	}
 
+	result := &SearchResult{
+		Root:    validPath,
+		Pattern: args.Pattern,
+		Matches: matches,
+		Summary: SearchSummary{
+			TotalMatches: len(matches),
+		},
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatSearchFilesJSON(result)
+	} else {
+		text = formatSearchFilesText(result)
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: strings.Join(matches, "\n"),
+			Text: text,
 		}},
 	}, nil
 }
@@ -284,16 +308,19 @@ func (s *FilesystemServer) handleDirectoryTree(ctx context.Context, request *mcp
 	var args struct {
 		Path            string   `json:"path"`
 		ExcludePatterns []string `json:"excludePatterns"`
+		Format          string   `json:"format"`
 	}
 	if err := json.Unmarshal(request.Params.Arguments, &args); err != nil {
 		return errorResult(fmt.Sprintf("Invalid arguments: %v", err)), nil
 	}
 
+	format := s.resolveFormat(args.Format)
 	validPath, err := s.validatePath(args.Path)
 	if err != nil {
 		return errorResult(err.Error()), nil
 	}
 
+	var totalFiles, totalDirs int
 	var buildTree func(currentPath string, relativePath string) (*Node, error)
 	buildTree = func(currentPath string, relativePath string) (*Node, error) {
 		info, err := os.Stat(currentPath)
@@ -309,6 +336,7 @@ func (s *FilesystemServer) handleDirectoryTree(ctx context.Context, request *mcp
 		if info.IsDir() {
 			node.Type = "directory"
 			node.Children = make([]*Node, 0)
+			totalDirs++
 
 			entries, err := os.ReadDir(currentPath)
 			if err != nil {
@@ -336,6 +364,8 @@ func (s *FilesystemServer) handleDirectoryTree(ctx context.Context, request *mcp
 					node.Children = append(node.Children, childNode)
 				}
 			}
+		} else {
+			totalFiles++
 		}
 
 		return node, nil
@@ -347,21 +377,35 @@ func (s *FilesystemServer) handleDirectoryTree(ctx context.Context, request *mcp
 	}
 
 	// The root node is usually a directory, but the TypeScript server returns an array of its children
-	var result []*Node
+	var rootForResult *Node
 	if rootNode.Type == "directory" {
-		result = rootNode.Children
+		rootForResult = &Node{
+			Name:     rootNode.Name,
+			Type:     "directory",
+			Children: rootNode.Children,
+		}
 	} else {
-		result = []*Node{rootNode}
+		rootForResult = rootNode
 	}
 
-	jsonBytes, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return errorResult(fmt.Sprintf("JSON marshal error: %v", err)), nil
+	result := &DirectoryTreeResult{
+		Root: rootForResult,
+		Summary: DirectorySummary{
+			Files:       totalFiles,
+			Directories: totalDirs,
+		},
+	}
+
+	var text string
+	if format == FormatJSON {
+		text = formatDirectoryTreeJSON(result)
+	} else {
+		text = formatDirectoryTreeText(result)
 	}
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{&mcp.TextContent{
-			Text: string(jsonBytes),
+			Text: text,
 		}},
 	}, nil
 }

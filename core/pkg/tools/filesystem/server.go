@@ -15,13 +15,10 @@ func init() {
 	runtime.Register(common.MCP_FileSystem, NewServer)
 }
 
-type Options struct {
-	AllowedDirectories []string
-}
-
 type FilesystemServer struct {
 	server             *mcp.Server
 	allowedDirectories []string
+	options            Options
 	mu                 sync.RWMutex
 }
 
@@ -57,6 +54,20 @@ func (s *FilesystemServer) validatePath(requestedPath string) (string, error) {
 	return absPath, nil
 }
 
+// resolveFormat returns the effective output format: per-call override > server default > AIMode > text.
+func (s *FilesystemServer) resolveFormat(requestFormat string) string {
+	if requestFormat == FormatJSON || requestFormat == FormatText {
+		return requestFormat
+	}
+	if s.options.OutputFormat == FormatJSON || s.options.OutputFormat == FormatText {
+		return s.options.OutputFormat
+	}
+	if s.options.AIMode {
+		return FormatJSON
+	}
+	return FormatText
+}
+
 func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 	options, ok := opts.(Options)
 	if !ok {
@@ -65,6 +76,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 
 	fsServer := &FilesystemServer{
 		allowedDirectories: options.AllowedDirectories,
+		options:            options,
 	}
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -79,6 +91,7 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 	fsServer.registerWriteTools()
 	fsServer.registerListTools()
 	fsServer.registerEditTools()
+	fsServer.registerGrepTools()
 
 	return server, nil
 }

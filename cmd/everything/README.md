@@ -75,6 +75,12 @@ Add to your `mcp_config.json` (Windsurf) or `claude_desktop_config.json` (Claude
 }
 ```
 
+## Installation
+
+```bash
+go install github.com/aqua777/mcp-servers/cmd/everything@latest
+```
+
 ## Build
 
 ```bash

@@ -64,6 +64,12 @@ Example:
 }
 ```
 
+## Installation
+
+```bash
+go install github.com/aqua777/mcp-servers/cmd/git-mcp@latest
+```
+
 ## Usage
 
 ```bash
