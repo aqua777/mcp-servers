@@ -18,6 +18,9 @@ const (
 	ToolMoveFile               = "move_file"
 	ToolListAllowedDirectories = "list_allowed_directories"
 	ToolGrep                   = "grep"
+	ToolCopyFile               = "copy_file"
+	ToolAppendFile             = "append_file"
+	ToolCreateSymlink          = "create_symlink"
 )
 
 // Options holds server-level configuration.

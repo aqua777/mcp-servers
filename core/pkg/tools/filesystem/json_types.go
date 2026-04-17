@@ -158,6 +158,44 @@ type GrepResult struct {
 	Summary GrepSummary `json:"summary"`
 }
 
+// CopyFileSummary provides aggregate counts for a copy_file operation.
+type CopyFileSummary struct {
+	FilesCopied     int   `json:"files_copied"`
+	DirectoriesMade int   `json:"directories_made"`
+	BytesCopied     int64 `json:"bytes_copied"`
+}
+
+// CopiedEntry represents a single file/directory copied.
+type CopiedEntry struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+	Type        string `json:"type"` // "file" or "directory"
+}
+
+// CopyResult holds the structured result of a copy_file operation.
+type CopyResult struct {
+	Source      string          `json:"source"`
+	Destination string          `json:"destination"`
+	Status      string          `json:"status"`
+	Entries     []CopiedEntry   `json:"entries"`
+	Summary     CopyFileSummary `json:"summary"`
+}
+
+// AppendResult holds the structured result of an append_file operation.
+type AppendResult struct {
+	Path         string `json:"path"`
+	Status       string `json:"status"`
+	BytesWritten int    `json:"bytes_written"`
+	Created      bool   `json:"created"` // true if the file was newly created
+}
+
+// SymlinkResult holds the structured result of a create_symlink operation.
+type SymlinkResult struct {
+	Path   string `json:"path"`
+	Target string `json:"target"`
+	Status string `json:"status"`
+}
+
 // ErrorResponse provides structured error output in JSON mode.
 type ErrorResponse struct {
 	Error ErrorDetail `json:"error"`
