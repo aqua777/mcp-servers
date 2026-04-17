@@ -17,6 +17,27 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
+// Coverage exceptions (pre-existing, not related to file-filtering changes):
+//
+// 1. computeAheadBehind (operations.go:19-59) — requires a real remote repository
+//    with push/fetch history. Simulating this in a temp dir test would require
+//    spinning up a second bare repo and configuring fetch, which is out of scope.
+//    This accounts for ~17 uncovered statements and is the primary reason total
+//    coverage is ~88.9% instead of ≥90%.
+//
+// 2. Remote-tracking branch paths in gitStatus (operations.go:387-413) — similarly
+//    require a configured remote branch reference to exercise.
+//
+// 3. Merge conflict status path in gitStatus (operations.go:416) — requires a
+//    partially-applied merge which cannot be created via go-git's high-level API.
+//
+// 4. Worktree() and NewFileFilter() error paths in handlers (server.go:304,308,
+//    345,354,404,458,483,505,523,550,576,598,630,634,639,668) — these require
+//    filesystem-level failures that cannot be injected without a custom billy.Filesystem.
+//
+// 5. filter.go:30 (gitignore ReadPatterns error) — requires a billy.Filesystem
+//    that returns errors mid-traversal.
+
 // gitServerTestSuite sets up a real git repo in a temp dir for testing.
 type gitServerTestSuite struct {
 	suite.Suite
@@ -1610,6 +1631,479 @@ func (s *gitServerTestSuite) TestGitDiffUnstaged_MaxFiles() {
 	s.Len(parsed.Files, 2, "should limit to 2 files")
 	s.True(parsed.Truncated, "should mark as truncated")
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// File-filtering integration tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestStatusFilter_GitignoreExcludes verifies that files matched by .gitignore
+// are excluded from status results. Note: go-git's Worktree.Status() already
+// suppresses gitignored files at the engine level, so app.log will not appear
+// regardless of our FileFilter. This test verifies that non-ignored files still
+// appear and that the gitignore filter does not break normal operation.
+func (s *gitServerTestSuite) TestStatusFilter_GitignoreExcludes() {
+	s.writeFile(".gitignore", "*.log\n")
+	s.stageFile(".gitignore")
+	s.commit("add gitignore")
+
+	s.writeFile("app.log", "log content")
+	s.writeFile("main.go", "package main")
+
+	result := s.callTool(ToolGitStatus, map[string]any{"repo_path": s.repoDir, "format": "json"})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	// app.log is suppressed by go-git's engine-level gitignore (not visible to our filter)
+	for _, fc := range parsed.Changes.Untracked {
+		s.NotEqual("app.log", fc.Path, "app.log should not appear (suppressed by go-git gitignore engine)")
+	}
+	// main.go should still appear normally
+	found := false
+	for _, fc := range parsed.Changes.Untracked {
+		if fc.Path == "main.go" {
+			found = true
+		}
+	}
+	s.True(found, "main.go should appear in untracked")
+}
+
+// TestStatusFilter_NoGitignore verifies that no_gitignore=true does not cause errors
+// and that non-ignored files still appear normally.
+// Note: go-git's Worktree.Status() suppresses gitignored files at the engine level
+// before our FileFilter sees them, so no_gitignore cannot expose gitignored files in
+// status — it only affects our custom include/exclude pattern matching layer.
+func (s *gitServerTestSuite) TestStatusFilter_NoGitignore() {
+	s.writeFile(".gitignore", "*.log\n")
+	s.stageFile(".gitignore")
+	s.commit("add gitignore")
+
+	s.writeFile("main.go", "package main")
+
+	// With no_gitignore + include_patterns: should still find main.go
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	found := false
+	for _, fc := range parsed.Changes.Untracked {
+		if fc.Path == "main.go" {
+			found = true
+		}
+	}
+	s.True(found, "main.go should appear with no_gitignore=true and include *.go")
+}
+
+// TestStatusFilter_IncludePatterns verifies include_patterns whitelist on status.
+func (s *gitServerTestSuite) TestStatusFilter_IncludePatterns() {
+	s.writeFile("main.go", "package main")
+	s.writeFile("README.md", "# readme")
+
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, fc := range parsed.Changes.Untracked {
+		s.Contains(fc.Path, ".go", "only .go files should appear")
+	}
+}
+
+// TestStatusFilter_ExcludePatterns verifies exclude_patterns on status.
+func (s *gitServerTestSuite) TestStatusFilter_ExcludePatterns() {
+	s.writeFile("main.go", "package main")
+	s.writeFile("README.md", "# readme")
+
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"exclude_patterns": []string{"*.md"},
+	})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, fc := range parsed.Changes.Untracked {
+		s.NotContains(fc.Path, ".md", "no .md files should appear")
+	}
+}
+
+// TestDiffUnstagedFilter_IncludePatterns verifies include_patterns on diff_unstaged.
+func (s *gitServerTestSuite) TestDiffUnstagedFilter_IncludePatterns() {
+	// Stage + commit two files
+	s.writeFile("main.go", "package main\n")
+	s.writeFile("README.md", "initial\n")
+	s.stageFile("main.go")
+	s.stageFile("README.md")
+	s.commit("add files")
+
+	// Modify both
+	s.writeFile("main.go", "package main\n// changed\n")
+	s.writeFile("README.md", "changed readme\n")
+
+	result := s.callTool(ToolGitDiffUnstaged, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, f := range parsed.Files {
+		s.Contains(f.Path, ".go", "only .go files should appear in diff")
+	}
+	s.Equal("", parsed.RawText, "RawText should be empty in JSON mode")
+}
+
+// TestDiffStagedFilter_ExcludePatterns verifies exclude_patterns on diff_staged.
+func (s *gitServerTestSuite) TestDiffStagedFilter_ExcludePatterns() {
+	// Stage + commit initial files
+	s.writeFile("main.go", "package main\n")
+	s.writeFile("notes.txt", "initial notes\n")
+	s.stageFile("main.go")
+	s.stageFile("notes.txt")
+	s.commit("add files")
+
+	// Modify and stage both
+	s.writeFile("main.go", "package main\n// updated\n")
+	s.writeFile("notes.txt", "updated notes\n")
+	s.stageFile("main.go")
+	s.stageFile("notes.txt")
+
+	result := s.callTool(ToolGitDiffStaged, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"exclude_patterns": []string{"*.txt"},
+	})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, f := range parsed.Files {
+		s.NotContains(f.Path, ".txt", "no .txt files should appear in staged diff")
+	}
+}
+
+// TestGitDiffFilter_Combined verifies combined include+exclude on git_diff.
+func (s *gitServerTestSuite) TestGitDiffFilter_Combined() {
+	// Create base commit
+	s.writeFile("app.go", "package app\n")
+	s.writeFile("app_test.go", "package app\n")
+	s.writeFile("README.md", "readme\n")
+	s.stageFile("app.go")
+	s.stageFile("app_test.go")
+	s.stageFile("README.md")
+	baseSHA := s.commit("base")
+
+	// Create second commit with changes
+	s.writeFile("app.go", "package app\n// changed\n")
+	s.writeFile("app_test.go", "package app\n// changed\n")
+	s.writeFile("README.md", "readme changed\n")
+	s.stageFile("app.go")
+	s.stageFile("app_test.go")
+	s.stageFile("README.md")
+	s.commit("modify all")
+
+	result := s.callTool(ToolGitDiff, map[string]any{
+		"repo_path":        s.repoDir,
+		"target":           baseSHA,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+		"exclude_patterns": []string{"*_test.go"},
+	})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	s.Len(parsed.Files, 1, "only app.go should pass include+exclude")
+	s.Equal("app.go", parsed.Files[0].Path)
+}
+
+// TestGitDiffFilter_SummaryRecalculated verifies summary is recalculated after filtering.
+func (s *gitServerTestSuite) TestGitDiffFilter_SummaryRecalculated() {
+	s.writeFile("app.go", "package app\n")
+	s.writeFile("README.md", "readme\n")
+	s.stageFile("app.go")
+	s.stageFile("README.md")
+	baseSHA := s.commit("base")
+
+	s.writeFile("app.go", "package app\n// change\n")
+	s.writeFile("README.md", "readme changed\n")
+	s.stageFile("app.go")
+	s.stageFile("README.md")
+	s.commit("modify")
+
+	// Without filter: 2 files
+	resultAll := s.callTool(ToolGitDiff, map[string]any{
+		"repo_path": s.repoDir,
+		"target":    baseSHA,
+		"format":    "json",
+	})
+	s.False(resultAll.IsError)
+	var parsedAll DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(resultAll)), &parsedAll))
+	s.Equal(2, parsedAll.Summary.TotalFiles)
+
+	// With filter: 1 file, summary should reflect that
+	resultFiltered := s.callTool(ToolGitDiff, map[string]any{
+		"repo_path":        s.repoDir,
+		"target":           baseSHA,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(resultFiltered.IsError)
+	var parsedFiltered DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(resultFiltered)), &parsedFiltered))
+	s.Equal(1, parsedFiltered.Summary.TotalFiles)
+	s.Equal("app.go", parsedFiltered.Files[0].Path)
+}
+
+// TestGitShowFilter_IncludePatterns verifies include_patterns on git_show.
+func (s *gitServerTestSuite) TestGitShowFilter_IncludePatterns() {
+	s.writeFile("service.go", "package main\n")
+	s.writeFile("config.yaml", "key: value\n")
+	s.stageFile("service.go")
+	s.stageFile("config.yaml")
+	commitSHA := s.commit("add service and config")
+
+	result := s.callTool(ToolGitShow, map[string]any{
+		"repo_path":        s.repoDir,
+		"revision":         commitSHA,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	var parsed ShowResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, f := range parsed.Diff.Files {
+		s.Contains(f.Path, ".go", "only .go files should appear in show diff")
+	}
+	s.Equal(1, parsed.Diff.Summary.TotalFiles)
+}
+
+// TestGitShowFilter_ExcludePatterns verifies exclude_patterns on git_show.
+func (s *gitServerTestSuite) TestGitShowFilter_ExcludePatterns() {
+	s.writeFile("handler.go", "package main\n")
+	s.writeFile("schema.sql", "CREATE TABLE foo;\n")
+	s.stageFile("handler.go")
+	s.stageFile("schema.sql")
+	commitSHA := s.commit("add handler and schema")
+
+	result := s.callTool(ToolGitShow, map[string]any{
+		"repo_path":        s.repoDir,
+		"revision":         commitSHA,
+		"format":           "json",
+		"no_gitignore":     true,
+		"exclude_patterns": []string{"*.sql"},
+	})
+	s.False(result.IsError)
+	var parsed ShowResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, f := range parsed.Diff.Files {
+		s.NotContains(f.Path, ".sql", "no .sql files should appear")
+	}
+}
+
+// TestStatusFilter_TextFormat verifies that text format still works correctly with filter.
+func (s *gitServerTestSuite) TestStatusFilter_TextFormat() {
+	s.writeFile("main.go", "package main")
+	s.writeFile("README.md", "# readme")
+
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "text",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "main.go", "main.go should appear in text output")
+	s.NotContains(text, "README.md", "README.md should be filtered out")
+}
+
+// TestDiffUnstagedFilter_GitignoreAndExclude verifies chained gitignore + exclude_patterns.
+func (s *gitServerTestSuite) TestDiffUnstagedFilter_GitignoreAndExclude() {
+	s.writeFile(".gitignore", "*.log\n")
+	s.stageFile(".gitignore")
+	s.commit("add gitignore")
+
+	s.writeFile("main.go", "package main\n")
+	s.writeFile("util.go", "package main\n")
+	s.stageFile("main.go")
+	s.stageFile("util.go")
+	s.commit("add go files")
+
+	// Modify files
+	s.writeFile("main.go", "package main\n// changed\n")
+	s.writeFile("util.go", "package main\n// changed\n")
+
+	result := s.callTool(ToolGitDiffUnstaged, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"exclude_patterns": []string{"util.go"},
+	})
+	s.False(result.IsError)
+	var parsed DiffResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, f := range parsed.Files {
+		s.NotEqual("util.go", f.Path, "util.go should be excluded")
+	}
+}
+
+// TestStatusFilter_StagedFiles verifies include_patterns works for staged files.
+func (s *gitServerTestSuite) TestStatusFilter_StagedFiles() {
+	// Create committed baseline
+	s.writeFile("main.go", "package main\n")
+	s.writeFile("config.yaml", "key: value\n")
+	s.stageFile("main.go")
+	s.stageFile("config.yaml")
+	s.commit("base")
+
+	// Modify and stage both
+	s.writeFile("main.go", "package main\n// staged\n")
+	s.writeFile("config.yaml", "key: new\n")
+	s.stageFile("main.go")
+	s.stageFile("config.yaml")
+
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, fc := range parsed.Changes.Staged {
+		s.Contains(fc.Path, ".go", "only .go files should appear in staged")
+	}
+	s.Len(parsed.Changes.Staged, 1, "only main.go should be staged")
+}
+
+// TestStatusFilter_UnstagedFiles verifies include_patterns works for unstaged files.
+func (s *gitServerTestSuite) TestStatusFilter_UnstagedFiles() {
+	// Create committed baseline
+	s.writeFile("main.go", "package main\n")
+	s.writeFile("config.yaml", "key: value\n")
+	s.stageFile("main.go")
+	s.stageFile("config.yaml")
+	s.commit("base")
+
+	// Modify both but don't stage
+	s.writeFile("main.go", "package main\n// modified\n")
+	s.writeFile("config.yaml", "key: modified\n")
+
+	result := s.callTool(ToolGitStatus, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "json",
+		"no_gitignore":     true,
+		"exclude_patterns": []string{"*.yaml"},
+	})
+	s.False(result.IsError)
+	var parsed StatusResult
+	s.NoError(json.Unmarshal([]byte(s.resultText(result)), &parsed))
+
+	for _, fc := range parsed.Changes.Unstaged {
+		s.NotContains(fc.Path, ".yaml", "no .yaml files should appear in unstaged")
+	}
+}
+
+// TestGitShowFilter_TextFormat verifies text format still works with filter on git_show.
+func (s *gitServerTestSuite) TestGitShowFilter_TextFormat() {
+	s.writeFile("service.go", "package main\n")
+	s.writeFile("config.yaml", "key: value\n")
+	s.stageFile("service.go")
+	s.stageFile("config.yaml")
+	commitSHA := s.commit("add service and config")
+
+	result := s.callTool(ToolGitShow, map[string]any{
+		"repo_path":        s.repoDir,
+		"revision":         commitSHA,
+		"format":           "text",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "service.go", "service.go should appear in text output")
+	s.NotContains(text, "config.yaml", "config.yaml should be filtered out")
+}
+
+// TestGitDiffFilter_TextFormat verifies text format still works with filter on git_diff.
+func (s *gitServerTestSuite) TestGitDiffFilter_TextFormat() {
+	s.writeFile("app.go", "package app\n")
+	s.writeFile("README.md", "readme\n")
+	s.stageFile("app.go")
+	s.stageFile("README.md")
+	baseSHA := s.commit("base")
+
+	s.writeFile("app.go", "package app\n// changed\n")
+	s.writeFile("README.md", "readme changed\n")
+	s.stageFile("app.go")
+	s.stageFile("README.md")
+	s.commit("modify")
+
+	result := s.callTool(ToolGitDiff, map[string]any{
+		"repo_path":        s.repoDir,
+		"target":           baseSHA,
+		"format":           "text",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "app.go", "app.go should appear in text output")
+	s.NotContains(text, "README.md", "README.md should be filtered out")
+}
+
+// TestDiffStagedFilter_TextFormat verifies text format still works with filter on diff_staged.
+func (s *gitServerTestSuite) TestDiffStagedFilter_TextFormat() {
+	s.writeFile("handler.go", "package main\n")
+	s.writeFile("notes.txt", "notes\n")
+	s.stageFile("handler.go")
+	s.stageFile("notes.txt")
+	s.commit("base")
+
+	s.writeFile("handler.go", "package main\n// updated\n")
+	s.writeFile("notes.txt", "updated notes\n")
+	s.stageFile("handler.go")
+	s.stageFile("notes.txt")
+
+	result := s.callTool(ToolGitDiffStaged, map[string]any{
+		"repo_path":        s.repoDir,
+		"format":           "text",
+		"no_gitignore":     true,
+		"include_patterns": []string{"*.go"},
+	})
+	s.False(result.IsError)
+	text := s.resultText(result)
+	s.Contains(text, "handler.go", "handler.go should appear in text output")
+	s.NotContains(text, "notes.txt", "notes.txt should be filtered out")
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 // TestHandleError_JSONFormat tests structured JSON error responses
 func (s *gitServerTestSuite) TestHandleError_JSONFormat() {

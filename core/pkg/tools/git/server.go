@@ -15,6 +15,39 @@ func init() {
 	runtime.Register(common.MCP_Git, NewServer)
 }
 
+// fileFilterSchemaProps returns the three shared schema properties for file filtering.
+// Callers merge the returned map into their tool's properties map.
+func fileFilterSchemaProps() map[string]any {
+	return map[string]any{
+		"include_patterns": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "Glob patterns for files to include (e.g., \"*.go\", \"**/*.ts\"). Only matching files appear in results.",
+		},
+		"exclude_patterns": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "Glob patterns for files to exclude (e.g., \"vendor/**\", \"*.log\"). Matching files are removed from results.",
+		},
+		"no_gitignore": map[string]any{
+			"type":        "boolean",
+			"description": "Disable .gitignore-based filtering (default: false).",
+		},
+	}
+}
+
+// mergeProps returns a new map containing all entries from base merged with extras.
+func mergeProps(base, extras map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(extras))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range extras {
+		out[k] = v
+	}
+	return out
+}
+
 // GitServer holds the MCP server and its configuration.
 type GitServer struct {
 	server  *mcp.Server
@@ -44,10 +77,10 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		Description: "Shows the working tree status",
 		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			"properties": mergeProps(map[string]any{
 				"repo_path": map[string]any{"type": "string", "description": "Path to Git repository"},
 				"format":    map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
-			},
+			}, fileFilterSchemaProps()),
 			"required": []string{"repo_path"},
 		},
 	}, gs.handleGitStatus)
@@ -57,13 +90,13 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		Description: "Shows changes in the working directory that are not yet staged",
 		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			"properties": mergeProps(map[string]any{
 				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
 				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
 				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
 				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
-			},
+			}, fileFilterSchemaProps()),
 			"required": []string{"repo_path"},
 		},
 	}, gs.handleGitDiffUnstaged)
@@ -73,13 +106,13 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		Description: "Shows changes that are staged for commit",
 		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			"properties": mergeProps(map[string]any{
 				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
 				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
 				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
 				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
-			},
+			}, fileFilterSchemaProps()),
 			"required": []string{"repo_path"},
 		},
 	}, gs.handleGitDiffStaged)
@@ -89,14 +122,14 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		Description: "Shows differences between branches or commits",
 		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			"properties": mergeProps(map[string]any{
 				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
 				"target":               map[string]any{"type": "string", "description": "Target branch or commit to compare with"},
 				"context_lines":        map[string]any{"type": "integer", "description": "Number of context lines to show (default: 3)"},
 				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 				"max_files":            map[string]any{"type": "integer", "description": "Maximum number of files to include in diff (0 = unlimited)"},
 				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
-			},
+			}, fileFilterSchemaProps()),
 			"required": []string{"repo_path", "target"},
 		},
 	}, gs.handleGitDiff)
@@ -191,12 +224,12 @@ func NewServer(ctx context.Context, opts any) (*mcp.Server, error) {
 		Description: "Shows the contents of a commit",
 		InputSchema: map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			"properties": mergeProps(map[string]any{
 				"repo_path":            map[string]any{"type": "string", "description": "Path to Git repository"},
 				"revision":             map[string]any{"type": "string", "description": "The revision (commit hash, branch name, tag) to show"},
 				"format":               map[string]any{"type": "string", "enum": []string{"text", "json"}, "description": "Output format (default: server setting)"},
 				"include_diff_content": map[string]any{"type": "boolean", "description": "Include line-level changes in JSON output (default: true)"},
-			},
+			}, fileFilterSchemaProps()),
 			"required": []string{"repo_path", "revision"},
 		},
 	}, gs.handleGitShow)
@@ -248,8 +281,11 @@ func (gs *GitServer) resolveFormat(requestFormat string) string {
 
 func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath string `json:"repo_path"`
-		Format   string `json:"format"`
+		RepoPath        string   `json:"repo_path"`
+		Format          string   `json:"format"`
+		IncludePatterns []string `json:"include_patterns"`
+		ExcludePatterns []string `json:"exclude_patterns"`
+		NoGitignore     *bool    `json:"no_gitignore"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err, FormatText)
@@ -259,7 +295,16 @@ func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolReque
 	if err != nil {
 		return handleError(err, format)
 	}
-	result, err := gitStatus(repo)
+	wt, err := repo.Worktree()
+	if err != nil {
+		return handleError(err, format)
+	}
+	noGitignore := args.NoGitignore != nil && *args.NoGitignore
+	filter, err := NewFileFilter(wt, noGitignore, args.IncludePatterns, args.ExcludePatterns)
+	if err != nil {
+		return handleError(err, format)
+	}
+	result, err := gitStatus(repo, filter)
 	if err != nil {
 		return handleError(err, format)
 	}
@@ -271,11 +316,14 @@ func (gs *GitServer) handleGitStatus(ctx context.Context, req *mcp.CallToolReque
 
 func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath           string `json:"repo_path"`
-		ContextLines       *int   `json:"context_lines"`
-		Format             string `json:"format"`
-		MaxFiles           *int   `json:"max_files"`
-		IncludeDiffContent *bool  `json:"include_diff_content"`
+		RepoPath           string   `json:"repo_path"`
+		ContextLines       *int     `json:"context_lines"`
+		Format             string   `json:"format"`
+		MaxFiles           *int     `json:"max_files"`
+		IncludeDiffContent *bool    `json:"include_diff_content"`
+		IncludePatterns    []string `json:"include_patterns"`
+		ExcludePatterns    []string `json:"exclude_patterns"`
+		NoGitignore        *bool    `json:"no_gitignore"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err, FormatText)
@@ -297,7 +345,16 @@ func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToo
 	if err != nil {
 		return handleError(err, format)
 	}
-	result, err := gitDiffUnstaged(repo, contextLines, maxFiles)
+	wt, err := repo.Worktree()
+	if err != nil {
+		return handleError(err, format)
+	}
+	noGitignore := args.NoGitignore != nil && *args.NoGitignore
+	filter, err := NewFileFilter(wt, noGitignore, args.IncludePatterns, args.ExcludePatterns)
+	if err != nil {
+		return handleError(err, format)
+	}
+	result, err := gitDiffUnstaged(repo, contextLines, maxFiles, filter)
 	if err != nil {
 		return handleError(err, format)
 	}
@@ -309,11 +366,14 @@ func (gs *GitServer) handleGitDiffUnstaged(ctx context.Context, req *mcp.CallToo
 
 func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath           string `json:"repo_path"`
-		ContextLines       *int   `json:"context_lines"`
-		Format             string `json:"format"`
-		MaxFiles           *int   `json:"max_files"`
-		IncludeDiffContent *bool  `json:"include_diff_content"`
+		RepoPath           string   `json:"repo_path"`
+		ContextLines       *int     `json:"context_lines"`
+		Format             string   `json:"format"`
+		MaxFiles           *int     `json:"max_files"`
+		IncludeDiffContent *bool    `json:"include_diff_content"`
+		IncludePatterns    []string `json:"include_patterns"`
+		ExcludePatterns    []string `json:"exclude_patterns"`
+		NoGitignore        *bool    `json:"no_gitignore"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err, FormatText)
@@ -335,7 +395,16 @@ func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolR
 	if err != nil {
 		return handleError(err, format)
 	}
-	result, err := gitDiffStaged(repo, contextLines, maxFiles)
+	wt, err := repo.Worktree()
+	if err != nil {
+		return handleError(err, format)
+	}
+	noGitignore := args.NoGitignore != nil && *args.NoGitignore
+	filter, err := NewFileFilter(wt, noGitignore, args.IncludePatterns, args.ExcludePatterns)
+	if err != nil {
+		return handleError(err, format)
+	}
+	result, err := gitDiffStaged(repo, contextLines, maxFiles, filter)
 	if err != nil {
 		return handleError(err, format)
 	}
@@ -347,12 +416,15 @@ func (gs *GitServer) handleGitDiffStaged(ctx context.Context, req *mcp.CallToolR
 
 func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath           string `json:"repo_path"`
-		Target             string `json:"target"`
-		ContextLines       *int   `json:"context_lines"`
-		Format             string `json:"format"`
-		MaxFiles           *int   `json:"max_files"`
-		IncludeDiffContent *bool  `json:"include_diff_content"`
+		RepoPath           string   `json:"repo_path"`
+		Target             string   `json:"target"`
+		ContextLines       *int     `json:"context_lines"`
+		Format             string   `json:"format"`
+		MaxFiles           *int     `json:"max_files"`
+		IncludeDiffContent *bool    `json:"include_diff_content"`
+		IncludePatterns    []string `json:"include_patterns"`
+		ExcludePatterns    []string `json:"exclude_patterns"`
+		NoGitignore        *bool    `json:"no_gitignore"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err, FormatText)
@@ -377,7 +449,16 @@ func (gs *GitServer) handleGitDiff(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return handleError(err, format)
 	}
-	result, err := gitDiff(repo, args.Target, contextLines, maxFiles)
+	wt, err := repo.Worktree()
+	if err != nil {
+		return handleError(err, format)
+	}
+	noGitignore := args.NoGitignore != nil && *args.NoGitignore
+	filter, err := NewFileFilter(wt, noGitignore, args.IncludePatterns, args.ExcludePatterns)
+	if err != nil {
+		return handleError(err, format)
+	}
+	result, err := gitDiff(repo, args.Target, contextLines, maxFiles, filter)
 	if err != nil {
 		return handleError(err, format)
 	}
@@ -526,10 +607,13 @@ func (gs *GitServer) handleGitCheckout(ctx context.Context, req *mcp.CallToolReq
 
 func (gs *GitServer) handleGitShow(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	var args struct {
-		RepoPath           string `json:"repo_path"`
-		Revision           string `json:"revision"`
-		Format             string `json:"format"`
-		IncludeDiffContent *bool  `json:"include_diff_content"`
+		RepoPath           string   `json:"repo_path"`
+		Revision           string   `json:"revision"`
+		Format             string   `json:"format"`
+		IncludeDiffContent *bool    `json:"include_diff_content"`
+		IncludePatterns    []string `json:"include_patterns"`
+		ExcludePatterns    []string `json:"exclude_patterns"`
+		NoGitignore        *bool    `json:"no_gitignore"`
 	}
 	if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 		return handleError(err, FormatText)
@@ -546,7 +630,16 @@ func (gs *GitServer) handleGitShow(ctx context.Context, req *mcp.CallToolRequest
 	if err != nil {
 		return handleError(err, format)
 	}
-	result, err := gitShow(repo, args.Revision)
+	wt, err := repo.Worktree()
+	if err != nil {
+		return handleError(err, format)
+	}
+	noGitignore := args.NoGitignore != nil && *args.NoGitignore
+	filter, err := NewFileFilter(wt, noGitignore, args.IncludePatterns, args.ExcludePatterns)
+	if err != nil {
+		return handleError(err, format)
+	}
+	result, err := gitShow(repo, args.Revision, filter)
 	if err != nil {
 		return handleError(err, format)
 	}

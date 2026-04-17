@@ -8,6 +8,7 @@ A Go implementation of the Git MCP Server, mirroring the reference Python implem
 - **Dual output formats** - All read operations support both text (Git CLI style) and JSON (structured metadata)
 - **AI-first mode** - Optimized defaults for AI consumption: JSON output + structured errors
 - **Advanced diff controls** - Toggle line-level changes, limit file count, get context before/after
+- **File filtering** - `.gitignore`-aware filtering + include/exclude glob patterns on all file-listing tools
 - **Enhanced metadata** - Ahead/behind computation, detached HEAD detection, untracked file types
 - **Security** - Repository path restriction with symlink-safe validation, flag-injection protection
 - **Pure-Go** implementation using [go-git](https://github.com/go-git/go-git) — no system `git` binary required
@@ -61,6 +62,35 @@ Example:
   "format": "json",
   "include_diff_content": false,
   "max_files": 10
+}
+```
+
+### File Filtering
+
+The tools `git_status`, `git_diff_unstaged`, `git_diff_staged`, `git_diff`, and `git_show` support file filtering parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `include_patterns` | `string[]` | `[]` | Glob patterns — only files matching **at least one** pattern appear in results (e.g. `["*.go", "**/*.ts"]`) |
+| `exclude_patterns` | `string[]` | `[]` | Glob patterns — files matching **any** pattern are removed from results (e.g. `["vendor/**", "*.log"]`) |
+| `no_gitignore` | `boolean` | `false` | When `true`, disables `.gitignore`-based filtering |
+
+**Filter logic** (applied in order):
+1. `.gitignore` patterns are applied first (unless `no_gitignore: true`)
+2. If `include_patterns` is set, files must match at least one pattern to pass
+3. If `exclude_patterns` is set, files matching any pattern are removed
+
+**Note on `git_status` and `.gitignore`**: go-git's status engine suppresses gitignored files before they reach the filter layer, so gitignored files will not appear in status output regardless of `no_gitignore`. The `no_gitignore` flag primarily affects the interaction between the gitignore layer and `include_patterns`/`exclude_patterns`.
+
+Glob patterns use [doublestar](https://github.com/bmatcuk/doublestar) syntax — `**` matches across directory boundaries.
+
+Example — show only Go source changes, excluding tests:
+```json
+{
+  "repo_path": "/path/to/repo",
+  "format": "json",
+  "include_patterns": ["**/*.go"],
+  "exclude_patterns": ["**/*_test.go"]
 }
 ```
 
