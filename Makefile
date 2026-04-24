@@ -20,8 +20,20 @@ dev-image:
 unit-tests:
 	$(DOCKER_RUN) $(DOCKER_RUN_ARGS) $(DOCKER_IMAGE) go-tests -v -no-cache -p=1 ./...
 
-build-test:
-	@for dir in $(shell ls -d cmd/*); do \
+build-in-directory:
+	@if [ -z "$(DIRECTORY)" ]; then \
+		echo "Error: DIRECTORY variable is not set"; \
+		exit 1; \
+	fi
+	@echo "Building in directory: $(DIRECTORY)"
+	@for dir in $(shell ls -d $(DIRECTORY)/*); do \
+		[ -d "$${dir}" ] || continue; \
 		printf "%-50s" "$${dir}:"; \
 		($(DOCKER_RUN) $(DOCKER_RUN_ARGS) $(DOCKER_IMAGE) go build -o /dev/null -buildvcs=false ./$${dir}/... && echo "OK") || echo "FAIL"; \
 	done
+
+build-servers: DIRECTORY ?= cmd
+build-servers: build-in-directory
+
+build-examples: DIRECTORY ?= examples
+build-examples: build-in-directory

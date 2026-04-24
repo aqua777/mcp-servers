@@ -53,6 +53,8 @@ func isDefault[T any](defaultValue T) bool {
 		return len(value) == 0
 	case map[string]string:
 		return len(value) == 0
+	case []int:
+		return len(value) == 0
 	}
 	return false
 }
@@ -68,6 +70,9 @@ func getDummyRunner(commandName string) func(*cobra.Command, []string) error {
 }
 
 func asJson(v any) string {
-	json, _ := json.MarshalIndent(v, "", "  ")
-	return string(json)
+	result, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(result)
 }
