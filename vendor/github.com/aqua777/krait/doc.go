@@ -3,7 +3,7 @@ Package krait provides a unified interface for building command-line application
 the functionality of Cobra (command-line interface) and Viper (configuration management) into
 a single, cohesive package.
 
-Krait simplifies the process of creating CLI applications with rich configuration support by
+Qobra simplifies the process of creating CLI applications with rich configuration support by
 offering a fluent API that handles both command definitions and configuration management.
 
 Key Features:

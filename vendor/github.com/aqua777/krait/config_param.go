@@ -29,6 +29,7 @@ const (
 	typeDuration       ConfigParamType = "duration"
 	typeStringSlice    ConfigParamType = "stringSlice"
 	typeStringToString ConfigParamType = "stringToString"
+	typeIntSlice       ConfigParamType = "intSlice"
 )
 
 // ConfigParam represents a configuration option for a command
@@ -40,13 +41,18 @@ type ConfigParam struct {
 	EnvironmentVarName string
 	DefaultValue       any
 	VarPtr             any
+	Persistent         bool
+}
+
+func (me *ConfigParam) IsConfigOnly() bool {
+	return me.Flag == emptyStr && me.EnvironmentVarName == emptyStr
 }
 
 func (me *ConfigParam) String() string {
 	return fmt.Sprintf("Name: %s, Flag: %s, ShortFlag: %s, EnvironmentVarName: %s, DefaultValue: %v", me.Name, me.Flag, me.ShortFlag, me.EnvironmentVarName, me.DefaultValue)
 }
 
-func (me *ConfigParam) setVarPtrValue(flag *pflag.Flag, viper *viper.Viper) {
+func (me *ConfigParam) setVarPtrValue(flag *pflag.Flag, viper *viper.Viper) error {
 	switch ConfigParamType(flag.Value.Type()) {
 	case typeString:
 		varPtr := me.VarPtr.(*string)
@@ -80,7 +86,7 @@ func (me *ConfigParam) setVarPtrValue(flag *pflag.Flag, viper *viper.Viper) {
 		*varPtr = uint32(viper.GetInt(me.Flag))
 	case typeUint64:
 		varPtr := me.VarPtr.(*uint64)
-		*varPtr = uint64(viper.GetInt(me.Flag))
+		*varPtr = viper.GetUint64(me.Flag)
 	case typeBool:
 		varPtr := me.VarPtr.(*bool)
 		*varPtr = viper.GetBool(me.Flag)
@@ -98,11 +104,14 @@ func (me *ConfigParam) setVarPtrValue(flag *pflag.Flag, viper *viper.Viper) {
 		*varPtr = viper.GetStringSlice(me.Flag)
 	case typeStringToString:
 		varPtr := me.VarPtr.(*map[string]string)
-		if *varPtr == nil {
-			*varPtr = make(map[string]string)
-		}
 		*varPtr = viper.GetStringMapString(me.Flag)
+	case typeIntSlice:
+		varPtr := me.VarPtr.(*[]int)
+		*varPtr = viper.GetIntSlice(me.Flag)
+	default:
+		return fmt.Errorf("unsupported flag type %q for flag %q", flag.Value.Type(), me.Flag)
 	}
+	return nil
 }
 
 type ConfigParams struct {
@@ -118,6 +127,21 @@ func (me *ConfigParams) With(name, flag, shortFlag, environmentVarName, descript
 		Description:        description,
 		DefaultValue:       defaultValue,
 		VarPtr:             varPtr,
+		Persistent:         false,
+	})
+	return me
+}
+
+func (me *ConfigParams) WithPersistent(name, flag, shortFlag, environmentVarName, description string, defaultValue, varPtr any) *ConfigParams {
+	me.Params = append(me.Params, &ConfigParam{
+		Name:               name,
+		Flag:               flag,
+		ShortFlag:          shortFlag,
+		EnvironmentVarName: environmentVarName,
+		Description:        description,
+		DefaultValue:       defaultValue,
+		VarPtr:             varPtr,
+		Persistent:         true,
 	})
 	return me
 }

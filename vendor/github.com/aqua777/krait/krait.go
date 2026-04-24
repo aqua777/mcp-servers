@@ -1,7 +1,10 @@
+// Package krait wraps Cobra and Viper into a single fluent API.
+// This package is not safe for concurrent use across multiple goroutines;
+// it is designed for single-goroutine CLI applications matching Cobra's own
+// documented threading model.
 package krait
 
 import (
-	"sync"
 	"time"
 
 	"github.com/spf13/cast"
@@ -10,40 +13,32 @@ import (
 
 var (
 	currentViper *viper.Viper
-	viperOnce    sync.Once
-	viperLock    sync.Mutex
 )
 
 var newViper = viper.New
 
-// getViperInstance returns the appropriate viper instance to use
+// getViperInstance returns the active command's viper instance, or a bare
+// viper instance if no command is currently executing.
 func getViperInstance() *viper.Viper {
-	viperLock.Lock()
-	defer viperLock.Unlock()
-
-	viperOnce.Do(func() {
-		if currentCommand != nil && currentCommand.viper != nil {
-			currentViper = currentCommand.viper
-		} else {
-			currentViper = viper.New()
-		}
-	})
-	return currentViper
+	if currentViper != nil {
+		return currentViper
+	}
+	return viper.New()
 }
 
+// Reset clears all global krait state. Intended for use between tests.
 func Reset() {
-	viperLock.Lock()
-	defer viperLock.Unlock()
-
 	currentViper = nil
 	currentCommand = nil
 	rootCommand = nil
-	viperOnce = sync.Once{}
 }
 
-// func IsSet(key string) bool {
-// 	return getViperInstance().IsSet(key)
-// }
+// IsSet reports whether the named parameter key was explicitly set in the
+// currently-executing command. Delegates to the current command's viper
+// instance. Returns false when called before Execute().
+func IsSet(key string) bool {
+	return getViperInstance().IsSet(key)
+}
 
 // Get returns the value associated with the key as an interface{}
 func Get(key string) interface{} {
@@ -145,6 +140,38 @@ func GetStringToString(key string) map[string]string {
 	return getViperInstance().GetStringMapString(key)
 }
 
+// GetIntSlice returns the value associated with the key as a slice of ints.
+func GetIntSlice(key string) []int {
+	return getViperInstance().GetIntSlice(key)
+}
+
+// GetTime returns the value associated with the key as a time.Time.
+// The value must come from a config file or environment variable; no CLI flag type exists.
+func GetTime(key string) time.Time {
+	return cast.ToTime(getViperInstance().Get(key))
+}
+
+// GetSizeInBytes returns the value associated with the key as a uint, parsing size
+// strings such as "10mb" or "1gb".
+// The value must come from a config file or environment variable; no CLI flag type exists.
+func GetSizeInBytes(key string) uint {
+	return getViperInstance().GetSizeInBytes(key)
+}
+
+// GetStringMapStringSlice returns the value associated with the key as a map[string][]string.
+// The value must come from a config file or environment variable; no CLI flag type exists.
+func GetStringMapStringSlice(key string) map[string][]string {
+	return getViperInstance().GetStringMapStringSlice(key)
+}
+
+// Unmarshal decodes all named-parameter values from the currently-executing command
+// into the value pointed to by v using mapstructure. Returns an error if decoding fails
+// or if called before Execute() (in which case a bare Viper with no keys is decoded).
+// Must be called from within Run, BeforeRun, AfterRun, or SanityCheck.
+func Unmarshal(v any) error {
+	return getViperInstance().Unmarshal(v)
+}
+
 func IsDebug() bool {
 	return (currentCommand != nil && currentCommand.IsDebug())
 }
@@ -162,6 +189,49 @@ func Root() *Command {
 
 func Current() *Command {
 	return currentCommand
+}
+
+// Sub returns a scoped view of the named-parameter config tree of the
+// currently-executing command rooted at key. Delegates to Current().Sub(key).
+// Returns nil if there is no current command or if the key is not a non-empty
+// subtree. Must be called from within Run, BeforeRun, AfterRun, or SanityCheck.
+func Sub(key string) map[string]any {
+	c := Current()
+	if c == nil {
+		return nil
+	}
+	return c.Sub(key)
+}
+
+// WriteConfig writes the resolved named-parameter configuration of the
+// currently-executing command to its configured config file path. Delegates to
+// Current().WriteConfig(). Must be called from within Run, BeforeRun, AfterRun,
+// or SanityCheck.
+func WriteConfig() error {
+	return withExecutingCommand((*Command).WriteConfig)
+}
+
+// SafeWriteConfig writes the resolved named-parameter configuration of the
+// currently-executing command to its config file path, returning an error if
+// the file already exists. Delegates to Current().SafeWriteConfig(). Must be
+// called from within Run, BeforeRun, AfterRun, or SanityCheck.
+func SafeWriteConfig() error {
+	return withExecutingCommand((*Command).SafeWriteConfig)
+}
+
+// WriteConfigAs writes the resolved named-parameter configuration of the
+// currently-executing command to path. Delegates to Current().WriteConfigAs(path).
+// Must be called from within Run, BeforeRun, AfterRun, or SanityCheck.
+func WriteConfigAs(path string) error {
+	return withExecutingCommandPath(path, (*Command).WriteConfigAs)
+}
+
+// SafeWriteConfigAs writes the resolved named-parameter configuration of the
+// currently-executing command to path, returning an error if the file already
+// exists. Delegates to Current().SafeWriteConfigAs(path). Must be called from
+// within Run, BeforeRun, AfterRun, or SanityCheck.
+func SafeWriteConfigAs(path string) error {
+	return withExecutingCommandPath(path, (*Command).SafeWriteConfigAs)
 }
 
 func App(name string, description string, longDescription string) *Command {
